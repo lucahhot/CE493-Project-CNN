@@ -18,9 +18,8 @@ module CNN_tb #(
     logic enable;
     logic [31:0] outfmap [NUM_FEATURES][IMAGE_HEIGHT][IMAGE_WIDTH];
 
-    // File reading/writing variables
-    int infile;
-    string line;
+    // Files reading/writing variables
+    int infile, outfile;
 
     // Instantiating an instance of CNN
     CNN #(.IMAGE_WIDTH(IMAGE_WIDTH),.IMAGE_HEIGHT(IMAGE_HEIGHT),.NUM_FEATURES(NUM_FEATURES),.KERNEL_SIZE(KERNEL_SIZE),.STRIDE(STRIDE))
@@ -29,11 +28,13 @@ module CNN_tb #(
 
     // Clock with a period of 20ns
     always
-     #10 clk = ~clk;
+        #10 clk = ~clk;
 
     initial begin
 
-        $display("\nStarting testing...\n");
+        $display($time,"ns: Starting testing...\n");
+
+        clk = 1;
 
         // Reset the CNN
         rst_cnn = 1;
@@ -45,6 +46,8 @@ module CNN_tb #(
         rst_cnn = 1;
         rst_weights = 1;
 
+        $display($time,"ns: Finished reseting CNN, loading feature maps into feature memory...\n");
+
         // Write single feature map into feature memory
         enable = 1;
         feature_WrEn = 0;
@@ -52,28 +55,51 @@ module CNN_tb #(
         // Feature is an "X" shape (flattened)
         feature = '{1,0,1,0,1,0,1,0,1};
         // Wait 1 clock pulse for feature map to loaded into memory
-        wait(clk == 1);
-        wait(clk == 0);
-        wait(clk == 1);
+        @(negedge clk);
+        @(negedge clk);
         feature_WrEn = 1;
 
+        $display($time,"ns: Reading 2D input image from input text file...\n");
+
         // Reading in 2D image from a text file
-  
         infile = $fopen("image_input.txt","r");
-        if (infile)  $display("File was opened successfully : %0d", infile);
-        else         $display("File was NOT opened successfully : %0d", infile);
+        if (infile)  $display("File was opened successfully : %0d\n", infile);
+        else         $display("File was NOT opened successfully : %0d\n", infile);
 
         for (int i = 0; i < IMAGE_HEIGHT; i = i + 1) begin
-            $fgets(line,infile);
-            for (int j = 0; i < IMAGE_WIDTH; j = j + 1) begin
-                $sscanf(line,"%d",image[i][j]);
+            for (int j = 0; j < IMAGE_WIDTH; j = j + 1) begin
+                // Ignoring the return value of $fscanf as we don't need it
+                $fscanf(infile,"%d",image[i][j]);
             end
         end
         $fclose(infile);
 
-        #10
+        $display($time,"ns: Starting convolution...\n");
 
-        $display("\nFinished testing...\n");
+        // Start convolution
+        enable = 0; 
+
+        // Wait for [IMAGE_HEIGHT]x[IMAGE_WIDTH] clock cycles as our STRIDE is 1
+        repeat(IMAGE_HEIGHT*IMAGE_WIDTH) begin
+            @(negedge clk);
+        end
+
+        $display($time,"ns: Writing outfmap results into output text file...\n");
+
+        // Write out outfmap back into a text file to easily analyze
+        outfile = $fopen("CNN_output.txt","w");
+        if (outfile)  $display("File was opened successfully : %0d\n", infile);
+        else         $display("File was NOT opened successfully : %0d\n", infile);
+
+        for (int i = 0; i < IMAGE_HEIGHT; i = i + 1) begin
+            for (int j = 0; j < IMAGE_WIDTH; j = j + 1) begin
+                $fwrite(outfile,"%0d ",outfmap[0][i][j]);
+            end
+            $fwrite(outfile,"\n");
+        end
+        $fclose(outfile);
+
+        $display($time,"ns: Finished testing...\n");
         
         $finish;
     end
