@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 module CNN #(
     parameter IMAGE_WIDTH = 28,
     parameter IMAGE_HEIGHT = 28,
@@ -5,22 +7,27 @@ module CNN #(
     parameter KERNEL_SIZE = 3,
     parameter STRIDE = 1
 )(
-    input logic image_input [IMAGE_WIDTH][IMAGE_HEIGHT], // 2D image input 
+    input logic image_input [IMAGE_HEIGHT][IMAGE_WIDTH], // 2D image input 
     input logic weights_input [KERNEL_SIZE*KERNEL_SIZE], // Weights for 1 feature
     input logic [$clog2(NUM_FEATURES):0] feature_writeAddr, // Address or feature number for which feature we want to write to
     input logic feature_WrEn, // Write enable for writing new weights into the feature_memory (active-low)
     input logic clk, // Main clock for the entire chip
     input logic rst_cnn, // Active-low reset signal to reset the convolution process
-    input logic rst_weights // Active-low reset signal to reset all the feature weights to 0
+    input logic rst_weights, // Active-low reset signal to reset all the feature weights to 0
+    input logic convolution_enable, // Active-low enable signal to enable convolution (DOES NOT RESET CNN)
 
     // NOT SURE WHAT OUTPUT WILL BE
     // Maybe the ReLU, pooling, and connecting of layers can be done internally or 
     // the chip could output all the outfmaps from the first and only convolution
+
+    // Current output of outfmap1 for testing purposes
+    output logic [31:0] outfmap1 [NUM_FEATURES][IMAGE_HEIGHT][IMAGE_WIDTH]
+
 );
 
 // 3D array output of the first convolution layer (will end up with NUM_FEATURES x 2D arrays)
 // Using 32 bit precision for each pixel (might have to change)
-logic [31:0] outfmap1 [NUM_FEATURES][IMAGE_WIDTH][IMAGE_HEIGHT];
+// logic [31:0] outfmap1 [NUM_FEATURES][IMAGE_WIDTH][IMAGE_HEIGHT];
 
 // 2D array to hold values of psums from each PE to feed them into the next PEs
 logic [31:0] psum_values [NUM_FEATURES][KERNEL_SIZE*KERNEL_SIZE];
@@ -57,13 +64,15 @@ always_ff @(negedge clk, negedge rst_cnn) begin
     end
     // Everything in this else block is combinational and non-blocking and should all happen in 1 clock cycle
     // This block is only executed if done == 0 as the image has not been looped through completely
-    else if (!done) begin
+    // Also only executes if start == 1 which indicates that the feature weights have been properly inputted
+    // and the the image input is ready to be taken in and convoluted
+    else if (!done && !convolution_enable) begin
         // Combinational process to update infmap_tile to feed into the PEs
         int tile_index;
         tile_index = 0;
         for (int tile_row = 0; tile_row < KERNEL_SIZE; tile_row = tile_row + 1) begin
             for (int tile_col = 0; tile_col < KERNEL_SIZE; tile_col = tile_col + 1) begin
-                infmap_tile[tile_index] = image_input[image_row + tile_row][image_col + tile_col];
+                infmap_tile[tile_index] <= image_input[image_row + tile_row][image_col + tile_col];
                 // Increment tile_index for the next tile element (it will naturally stop at KERNEL_SIZE*KERNEL_SIZE
                 // as the 2 for loops will only go until that value and stop)
                 tile_index = tile_index + 1;
@@ -71,13 +80,13 @@ always_ff @(negedge clk, negedge rst_cnn) begin
         end
         // Combinational process to update the last psum value in the accumulation back into outfmap1 for all features
         for (int feature_index = 0; feature_index < NUM_FEATURES; feature_index = feature_index + 1) begin
-            outfmap1[feature_index][image_row][image_col] = psum_values[feature_index][KERNEL_SIZE*KERNEL_SIZE - 1];
+            outfmap1[feature_index][image_row][image_col] <= psum_values[feature_index][KERNEL_SIZE*KERNEL_SIZE - 1];
         end
         // Increment image_row and image_col by STRIDE for the next tile in the next cycle
-        image_row = image_row + STRIDE;
-        image_col = image_col + STRIDE;
+        image_row <= image_row + STRIDE;
+        image_col <= image_col + STRIDE;
         // If the next tile is out of bounds, then assert done and the convolution will stop
-        if ((image_row + KERNEL_SIZE == IMAGE_HEIGHT) && (image_col + KERNEL_SIZE == IMAGE_WIDTH))
+        if (((image_row + STRIDE) + KERNEL_SIZE == IMAGE_HEIGHT) && ((image_col + STRIDE) + KERNEL_SIZE == IMAGE_WIDTH))
             done <= 1;
     end  
 end    
@@ -107,9 +116,3 @@ for (pe_col = 0; pe_col < NUM_FEATURES; pe_col = pe_col + 1) begin
 end
 
 endmodule 
-
-
-
-
-
-

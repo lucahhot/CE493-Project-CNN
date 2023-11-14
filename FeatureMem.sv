@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 module FeatureMem #(
     parameter KERNEL_SIZE = 3,
     parameter NUM_FEATURES = 10

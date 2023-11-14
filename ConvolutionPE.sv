@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 module ConvolutionPE (
     input logic [31:0] inpsum,
     input logic weight,
