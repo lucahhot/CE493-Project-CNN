@@ -1,10 +1,10 @@
 `timescale 1ns/1ps
 
 module ConvolutionPE (
-    input logic [31:0] inpsum,
-    input logic weight,
-    input logic infmap_value,
-    output logic [31:0] outpsum
+    input logic signed [31:0] inpsum,
+    input logic signed [1:0] weight,
+    input logic signed [1:0] infmap_value,
+    output logic signed [31:0] outpsum
 );
 
 // In order to try and replicate the zero gating logic from the Eyeriss paper,
@@ -16,6 +16,11 @@ module ConvolutionPE (
 // Since we do not have SPADs within the PEs and everything is stored globally, I'm not sure how
 // much power saving this actually results in. 
 
-assign outpsum = (infmap_value == 0) ? 32'b0 : inpsum + (weight * infmap_value);
+always_comb begin
+    if (infmap_value == 0)
+        outpsum = 0;
+    else 
+        outpsum = inpsum + (weight * infmap_value);
+end
 
 endmodule

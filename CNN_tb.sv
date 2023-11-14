@@ -8,15 +8,18 @@ module CNN_tb #(
     parameter STRIDE = 1
 );
 
-    logic image [IMAGE_HEIGHT][IMAGE_WIDTH];
-    logic feature [KERNEL_SIZE*KERNEL_SIZE];
+    logic signed [1:0] image [IMAGE_HEIGHT][IMAGE_WIDTH];
+    logic signed [1:0] feature [KERNEL_SIZE*KERNEL_SIZE];
     logic feature_addr;
     logic feature_WrEn;
     logic clk;
     logic rst_cnn;
     logic rst_weights;
     logic enable;
-    logic [31:0] outfmap [NUM_FEATURES][IMAGE_HEIGHT][IMAGE_WIDTH];
+
+    parameter OUTPUT_WIDTH = (IMAGE_WIDTH-KERNEL_SIZE)/STRIDE+1;
+    parameter OUTPUT_HEIGHT = (IMAGE_HEIGHT-KERNEL_SIZE)/STRIDE+1;
+    logic signed [31:0] outfmap [NUM_FEATURES][OUTPUT_HEIGHT][OUTPUT_WIDTH];
 
     // Files reading/writing variables
     int infile, outfile;
@@ -24,7 +27,7 @@ module CNN_tb #(
     // Instantiating an instance of CNN
     CNN #(.IMAGE_WIDTH(IMAGE_WIDTH),.IMAGE_HEIGHT(IMAGE_HEIGHT),.NUM_FEATURES(NUM_FEATURES),.KERNEL_SIZE(KERNEL_SIZE),.STRIDE(STRIDE))
     CNN_dut(.image_input(image),.weights_input(feature),.feature_writeAddr(feature_addr),.feature_WrEn(feature_WrEn),
-            .clk(clk),.rst_cnn(rst_cnn),.rst_weights(rst_weights),.convolution_enable(enable),.outfmap1(outfmap));
+            .clk(clk),.rst_cnn(rst_cnn),.rst_weights(rst_weights),.convolution_enable(enable),.outfmap(outfmap));
 
     // Clock with a period of 20ns
     always
@@ -37,6 +40,8 @@ module CNN_tb #(
         clk = 1;
 
         // Reset the CNN
+        enable = 1;
+        feature_WrEn = 1;
         rst_cnn = 1;
         rst_weights = 1;
         #10
@@ -49,11 +54,10 @@ module CNN_tb #(
         $display($time,"ns: Finished reseting CNN, loading feature maps into feature memory...\n");
 
         // Write single feature map into feature memory
-        enable = 1;
         feature_WrEn = 0;
         feature_addr = 0;
         // Feature is an "X" shape (flattened)
-        feature = '{1,0,1,0,1,0,1,0,1};
+        feature = '{1, -1, 1, -1, 1, -1, 1, -1, 1};
         // Wait 1 clock pulse for feature map to loaded into memory
         @(negedge clk);
         @(negedge clk);
@@ -68,21 +72,22 @@ module CNN_tb #(
 
         for (int i = 0; i < IMAGE_HEIGHT; i = i + 1) begin
             for (int j = 0; j < IMAGE_WIDTH; j = j + 1) begin
-                // Ignoring the return value of $fscanf as we don't need it
-                $fscanf(infile,"%d",image[i][j]);
+                void'($fscanf(infile,"%d",image[i][j]));
             end
         end
         $fclose(infile);
+
+        #10
 
         $display($time,"ns: Starting convolution...\n");
 
         // Start convolution
         enable = 0; 
 
-        // Wait for [IMAGE_HEIGHT]x[IMAGE_WIDTH] clock cycles as our STRIDE is 1
-        repeat(IMAGE_HEIGHT*IMAGE_WIDTH) begin
-            @(negedge clk);
-        end
+        // Wait until done = 1
+        wait(CNN_dut.done == 1);
+
+        #20
 
         $display($time,"ns: Writing outfmap results into output text file...\n");
 
@@ -91,8 +96,8 @@ module CNN_tb #(
         if (outfile)  $display("File was opened successfully : %0d\n", infile);
         else         $display("File was NOT opened successfully : %0d\n", infile);
 
-        for (int i = 0; i < IMAGE_HEIGHT; i = i + 1) begin
-            for (int j = 0; j < IMAGE_WIDTH; j = j + 1) begin
+        for (int i = 0; i < OUTPUT_HEIGHT; i = i + 1) begin
+            for (int j = 0; j < OUTPUT_WIDTH; j = j + 1) begin
                 $fwrite(outfile,"%0d ",outfmap[0][i][j]);
             end
             $fwrite(outfile,"\n");
