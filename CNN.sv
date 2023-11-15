@@ -1,11 +1,12 @@
 `timescale 1ns/1ps
 
 module CNN #(
-    parameter IMAGE_WIDTH = 28,
-    parameter IMAGE_HEIGHT = 28,
+    parameter IMAGE_WIDTH = 32,
+    parameter IMAGE_HEIGHT = 32,
     parameter NUM_FEATURES = 10,
     parameter KERNEL_SIZE = 3,
-    parameter STRIDE = 1
+    parameter STRIDE = 1,
+    parameter DATA_WIDTH = 8
 )(
     input logic signed [1:0] image_input [IMAGE_HEIGHT][IMAGE_WIDTH], // 2D image input 
     input logic signed [1:0] weights_input [KERNEL_SIZE*KERNEL_SIZE], // Weights for 1 feature
@@ -21,7 +22,7 @@ module CNN #(
     // the chip could output all the outfmaps from the first and only convolution
 
     // Current output of outfmap for testing purposes
-    output logic signed [31:0] outfmap [NUM_FEATURES][(IMAGE_HEIGHT-KERNEL_SIZE)/STRIDE+1][(IMAGE_WIDTH-KERNEL_SIZE)/STRIDE+1]
+    output logic signed [DATA_WIDTH-1:0] outfmap [NUM_FEATURES][(IMAGE_HEIGHT-KERNEL_SIZE)/STRIDE+1][(IMAGE_WIDTH-KERNEL_SIZE)/STRIDE+1]
 
 );
 
@@ -31,10 +32,10 @@ parameter OUTPUT_HEIGHT = (IMAGE_HEIGHT-KERNEL_SIZE)/STRIDE+1;
 
 // 3D array output of the first convolution layer (will end up with NUM_FEATURES x 2D arrays)
 // Using 32 bit precision for each pixel (might have to change)
-// logic [31:0] outfmap [NUM_FEATURES][IMAGE_WIDTH][IMAGE_HEIGHT];
+// logic [7:0] outfmap [NUM_FEATURES][IMAGE_WIDTH][IMAGE_HEIGHT];
 
 // 2D array to hold values of psums from each PE to feed them into the next PEs
-logic signed [31:0] psum_values [NUM_FEATURES][KERNEL_SIZE*KERNEL_SIZE];
+logic signed [DATA_WIDTH-1:0] psum_values [NUM_FEATURES][KERNEL_SIZE*KERNEL_SIZE];
 
 // This KERNEL_SIZE * KERNEL_SIZE array will hold the current infmap tile values to feed into the 
 // PE array and will be updated every clock cycle to hold a new tile from the image input
@@ -60,8 +61,6 @@ always_ff @(negedge clk, negedge rst_cnn) begin
     // Also reset all the variables used to loop through the input image to create the correct image tiles
     if(!rst_cnn) begin
         outfmap <= '{default: '0};
-        psum_values <= '{default: '0};
-        infmap_tile <= '{default: '0};
         image_row <= 0;
         image_col <= 0;
         done <= 0;
@@ -103,6 +102,8 @@ always_comb begin
             end
         end
     end
+    else
+        infmap_tile = '{default: '0};
 end
 
 // Generate PEs in a (KERNEL_SIZE * KERNEL_SIZE) x NUM_FEATURES 2D array
@@ -113,7 +114,7 @@ for (pe_col = 0; pe_col < NUM_FEATURES; pe_col = pe_col + 1) begin
 
         // First row PE takes an inpsum of 0 as accumulation has not started yet
         if (pe_row == 0) 
-            ConvolutionPE first_PE(.inpsum(0),
+            ConvolutionPE #(DATA_WIDTH) first_PE(.inpsum('{default: '0}),
                                    .weight(weights[pe_col][pe_row]),
                                    .infmap_value(infmap_tile[pe_row]),
                                    .outpsum(psum_values[pe_col][pe_row]));
@@ -121,7 +122,7 @@ for (pe_col = 0; pe_col < NUM_FEATURES; pe_col = pe_col + 1) begin
         // Other PEs take an inpsum from the previous PE's outpsum
         // The last PE will leave the accumulated psum in the last index of psum_values for the corresponding feature
         else
-            ConvolutionPE middle_PE(.inpsum(psum_values[pe_col][pe_row - 1]),
+            ConvolutionPE #(DATA_WIDTH) middle_PE(.inpsum(psum_values[pe_col][pe_row - 1]),
                                     .weight(weights[pe_col][pe_row]),
                                     .infmap_value(infmap_tile[pe_row]),
                                     .outpsum(psum_values[pe_col][pe_row]));

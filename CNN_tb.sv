@@ -3,9 +3,10 @@
 module CNN_tb #(
     parameter IMAGE_WIDTH = 12,
     parameter IMAGE_HEIGHT = 12,
-    parameter NUM_FEATURES = 1,
+    parameter NUM_FEATURES = 2,
     parameter KERNEL_SIZE = 3,
-    parameter STRIDE = 1
+    parameter STRIDE = 1,
+    parameter DATA_WIDTH = 8
 );
 
     logic signed [1:0] image [IMAGE_HEIGHT][IMAGE_WIDTH];
@@ -19,13 +20,13 @@ module CNN_tb #(
 
     parameter OUTPUT_WIDTH = (IMAGE_WIDTH-KERNEL_SIZE)/STRIDE+1;
     parameter OUTPUT_HEIGHT = (IMAGE_HEIGHT-KERNEL_SIZE)/STRIDE+1;
-    logic signed [31:0] outfmap [NUM_FEATURES][OUTPUT_HEIGHT][OUTPUT_WIDTH];
+    logic signed [7:0] outfmap [NUM_FEATURES][OUTPUT_HEIGHT][OUTPUT_WIDTH];
 
     // Files reading/writing variables
     int infile, outfile;
 
     // Instantiating an instance of CNN
-    CNN #(.IMAGE_WIDTH(IMAGE_WIDTH),.IMAGE_HEIGHT(IMAGE_HEIGHT),.NUM_FEATURES(NUM_FEATURES),.KERNEL_SIZE(KERNEL_SIZE),.STRIDE(STRIDE))
+    CNN #(.IMAGE_WIDTH(IMAGE_WIDTH),.IMAGE_HEIGHT(IMAGE_HEIGHT),.NUM_FEATURES(NUM_FEATURES),.KERNEL_SIZE(KERNEL_SIZE),.STRIDE(STRIDE),.DATA_WIDTH(DATA_WIDTH))
     CNN_dut(.image_input(image),.weights_input(feature),.feature_writeAddr(feature_addr),.feature_WrEn(feature_WrEn),
             .clk(clk),.rst_cnn(rst_cnn),.rst_weights(rst_weights),.convolution_enable(enable),.outfmap(outfmap));
 
@@ -59,6 +60,11 @@ module CNN_tb #(
         // Feature is an "X" shape (flattened)
         feature = '{1, -1, 1, -1, 1, -1, 1, -1, 1};
         // Wait 1 clock pulse for feature map to loaded into memory
+        @(negedge clk);
+        @(negedge clk);
+        // Write second feature map into feature memory
+        feature_addr = 1;
+        feature = '{1,1,1,1,1,1,1,1,1};
         @(negedge clk);
         @(negedge clk);
         feature_WrEn = 1;
@@ -96,12 +102,24 @@ module CNN_tb #(
         if (outfile)  $display("File was opened successfully : %0d\n", infile);
         else         $display("File was NOT opened successfully : %0d\n", infile);
 
+        $fwrite(outfile,"Outfmap for feature 1: \n");
         for (int i = 0; i < OUTPUT_HEIGHT; i = i + 1) begin
             for (int j = 0; j < OUTPUT_WIDTH; j = j + 1) begin
                 $fwrite(outfile,"%0d ",outfmap[0][i][j]);
             end
             $fwrite(outfile,"\n");
         end
+
+        $fwrite(outfile,"\nOutfmap for feature 2: \n");
+
+        // Writing out the second outfmap below 
+        for (int i = 0; i < OUTPUT_HEIGHT; i = i + 1) begin
+            for (int j = 0; j < OUTPUT_WIDTH; j = j + 1) begin
+                $fwrite(outfile,"%0d ",outfmap[1][i][j]);
+            end
+            $fwrite(outfile,"\n");
+        end
+
         $fclose(outfile);
 
         $display($time,"ns: Finished testing...\n");

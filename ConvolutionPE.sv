@@ -1,10 +1,12 @@
 `timescale 1ns/1ps
 
-module ConvolutionPE (
-    input logic signed [31:0] inpsum,
+module ConvolutionPE #(
+    parameter DATA_WIDTH = 8
+)(
+    input logic signed [DATA_WIDTH-1:0] inpsum,
     input logic signed [1:0] weight,
     input logic signed [1:0] infmap_value,
-    output logic signed [31:0] outpsum
+    output logic signed [DATA_WIDTH-1:0] outpsum
 );
 
 // In order to try and replicate the zero gating logic from the Eyeriss paper,
