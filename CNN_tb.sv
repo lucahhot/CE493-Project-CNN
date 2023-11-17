@@ -5,7 +5,6 @@ module CNN_tb #(
     parameter IMAGE_HEIGHT = 12,
     parameter NUM_FEATURES = 2,
     parameter KERNEL_SIZE = 3,
-    parameter STRIDE = 1,
     parameter DATA_WIDTH = 8
 );
 
@@ -18,17 +17,24 @@ module CNN_tb #(
     logic rst_weights;
     logic enable;
 
-    parameter OUTPUT_WIDTH = (IMAGE_WIDTH-KERNEL_SIZE)/STRIDE+1;
-    parameter OUTPUT_HEIGHT = (IMAGE_HEIGHT-KERNEL_SIZE)/STRIDE+1;
-    logic signed [7:0] outfmap [NUM_FEATURES][OUTPUT_HEIGHT][OUTPUT_WIDTH];
+    parameter IDLE = 0, CONVOLUTION = 1, POOLING = 2, FLATTENING = 3, DENSE = 4;
+    parameter STRIDE = 1;
+    parameter POOLING_STRIDE = 2;
+    parameter CONVOLUTION_WIDTH = (IMAGE_WIDTH-KERNEL_SIZE)+1;
+    parameter CONVOLUTION_HEIGHT = (IMAGE_HEIGHT-KERNEL_SIZE)+1;
+    parameter POOLED_WIDTH = CONVOLUTION_WIDTH >> 1;
+    parameter POOLED_HEIGHT = CONVOLUTION_HEIGHT >> 1;
+    parameter FLATTENED_LENGTH = POOLED_WIDTH * POOLED_HEIGHT * NUM_FEATURES;
+
+    logic [DATA_WIDTH-1:0] out [NUM_FEATURES][FLATTENED_LENGTH];
 
     // Files reading/writing variables
-    int infile, outfile;
+    int infile,convolution_outfile,pooled_outfile,flattened_outfile;
 
     // Instantiating an instance of CNN
-    CNN #(.IMAGE_WIDTH(IMAGE_WIDTH),.IMAGE_HEIGHT(IMAGE_HEIGHT),.NUM_FEATURES(NUM_FEATURES),.KERNEL_SIZE(KERNEL_SIZE),.STRIDE(STRIDE),.DATA_WIDTH(DATA_WIDTH))
+    CNN #(.IMAGE_WIDTH(IMAGE_WIDTH),.IMAGE_HEIGHT(IMAGE_HEIGHT),.NUM_FEATURES(NUM_FEATURES),.KERNEL_SIZE(KERNEL_SIZE),.DATA_WIDTH(DATA_WIDTH))
     CNN_dut(.image_input(image),.weights_input(feature),.feature_writeAddr(feature_addr),.feature_WrEn(feature_WrEn),
-            .clk(clk),.rst_cnn(rst_cnn),.rst_weights(rst_weights),.convolution_enable(enable),.outfmap(outfmap));
+            .clk(clk),.rst_cnn(rst_cnn),.rst_weights(rst_weights),.convolution_enable(enable),.out(out));
 
     // Clock with a period of 20ns
     always
@@ -89,38 +95,80 @@ module CNN_tb #(
 
         // Start convolution
         enable = 0; 
+        @(posedge clk);
+        enable = 1;
 
-        // Wait until done = 1
-        wait(CNN_dut.done == 1);
+        // Wait until state == POOLING to check convolution output
+        wait(CNN_dut.state == POOLING);
 
         #20
 
-        $display($time,"ns: Writing outfmap results into output text file...\n");
+        $display($time,"ns: Writing convolution_outfmap results into convolution_output text file...\n");
 
-        // Write out outfmap back into a text file to easily analyze
-        outfile = $fopen("CNN_output.txt","w");
-        if (outfile)  $display("File was opened successfully : %0d\n", infile);
-        else         $display("File was NOT opened successfully : %0d\n", infile);
+        // Write out convolution_outfmap back into a text file to easily analyze
+        convolution_outfile = $fopen("convolution_output.txt","w");
+        if (convolution_outfile)  $display("File was opened successfully : %0d\n", convolution_outfile);
+        else         $display("File was NOT opened successfully : %0d\n", convolution_outfile);
 
-        $fwrite(outfile,"Outfmap for feature 1: \n");
-        for (int i = 0; i < OUTPUT_HEIGHT; i = i + 1) begin
-            for (int j = 0; j < OUTPUT_WIDTH; j = j + 1) begin
-                $fwrite(outfile,"%0d ",outfmap[0][i][j]);
+        for (int feature = 0; feature < NUM_FEATURES; feature = feature + 1) begin
+            $fwrite(convolution_outfile,"convolution_outfmap for feature %0d: \n",(feature+1));
+            for (int i = 0; i < CONVOLUTION_HEIGHT; i = i + 1) begin
+                for (int j = 0; j < CONVOLUTION_WIDTH; j = j + 1) begin
+                    $fwrite(convolution_outfile,"%0d ",CNN_dut.convolution_outfmap[feature][i][j]);
+                end
+                $fwrite(convolution_outfile,"\n");
             end
-            $fwrite(outfile,"\n");
+            $fwrite(convolution_outfile,"\n");
         end
 
-        $fwrite(outfile,"\nOutfmap for feature 2: \n");
+        $fclose(convolution_outfile);
 
-        // Writing out the second outfmap below 
-        for (int i = 0; i < OUTPUT_HEIGHT; i = i + 1) begin
-            for (int j = 0; j < OUTPUT_WIDTH; j = j + 1) begin
-                $fwrite(outfile,"%0d ",outfmap[1][i][j]);
+        // Wait until state == FLATTENING to check pooling output
+        wait(CNN_dut.state == FLATTENING);
+
+        #20 
+
+        $display($time,"ns: Writing pooled_outfmap results into pooled_output text file...\n");
+
+        // write out pooled_outfmap back into a text file
+        pooled_outfile = $fopen("pooled_output.txt","w");
+        if (pooled_outfile)  $display("File was opened successfully : %0d\n", pooled_outfile);
+        else         $display("File was NOT opened successfully : %0d\n", pooled_outfile);
+
+        for (int feature = 0; feature < NUM_FEATURES; feature = feature + 1) begin
+            $fwrite(pooled_outfile,"pooled_outfmap for feature %0d: \n",(feature+1));
+            for (int i = 0; i < POOLED_HEIGHT; i = i + 1) begin
+                for (int j = 0; j < POOLED_WIDTH; j = j + 1) begin
+                    $fwrite(pooled_outfile,"%0d ",CNN_dut.pooled_outfmap[feature][i][j]);
+                end
+                $fwrite(pooled_outfile,"\n");
             end
-            $fwrite(outfile,"\n");
+            $fwrite(pooled_outfile,"\n");
         end
 
-        $fclose(outfile);
+        $fclose(pooled_outfile);
+
+        // Wait until state == DENSE to check flattening output
+        wait(CNN_dut.state == DENSE);
+
+        #20 
+
+        $display($time,"ns: Writing flattened_outfmap results into flattened_output text file...\n");
+
+        // write out pooled_outfmap back into a text file
+        flattened_outfile = $fopen("flattened_output.txt","w");
+        if (flattened_outfile)  $display("File was opened successfully : %0d\n", flattened_outfile);
+        else         $display("File was NOT opened successfully : %0d\n", flattened_outfile);
+
+        for (int feature = 0; feature < NUM_FEATURES; feature = feature + 1) begin
+            $fwrite(flattened_outfile,"flattened_outfmap for feature %0d: \n",(feature+1));
+            for (int i = 0; i < FLATTENED_LENGTH; i = i + 1) begin
+                $fwrite(flattened_outfile,"%0d\n",CNN_dut.flattened_outfmap[feature][i]);
+            end
+            $fwrite(flattened_outfile,"\n");
+        end
+
+        $fclose(flattened_outfile);
 
         $display($time,"ns: Finished testing...\n");
         
