@@ -10,7 +10,7 @@ module CNN_tb #(
 
     logic signed [1:0] image [IMAGE_HEIGHT][IMAGE_WIDTH];
     logic signed [1:0] feature [KERNEL_SIZE*KERNEL_SIZE];
-    logic feature_addr;
+    logic [$clog2(NUM_FEATURES):0] feature_addr;
     logic feature_WrEn;
     logic clk;
     logic rst_cnn;
@@ -26,7 +26,7 @@ module CNN_tb #(
     parameter POOLED_HEIGHT = CONVOLUTION_HEIGHT >> 1;
     parameter FLATTENED_LENGTH = POOLED_WIDTH * POOLED_HEIGHT * NUM_FEATURES;
 
-    logic [DATA_WIDTH-1:0] out [NUM_FEATURES][FLATTENED_LENGTH];
+    logic [DATA_WIDTH-1:0] out;
 
     // Files reading/writing variables
     int infile,convolution_outfile,pooled_outfile,flattened_outfile;

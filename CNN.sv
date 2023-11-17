@@ -16,8 +16,8 @@ module CNN #(
     input logic rst_weights, // Active-low reset signal to reset all the feature weights to 0
     input logic convolution_enable, // Active-low enable signal to start convolution (DOES NOT RESET CNN)
 
-    // Dummy output for now for synthesis tool to calculate timing
-    output logic [DATA_WIDTH-1:0] out [NUM_FEATURES][50]
+    // Dummy output for now for synthesis tool to calculate timing (the first value of the first feature's flattened output)
+    output logic [DATA_WIDTH-1:0] out
 
 );
 
@@ -85,7 +85,7 @@ logic [DATA_WIDTH-1:0] flattened_outfmap [NUM_FEATURES][FLATTENED_LENGTH];
 // Combinational version of the above to be updated in the combinational always_comb statement
 logic [DATA_WIDTH-1:0] flattened_outfmap_c [NUM_FEATURES][FLATTENED_LENGTH];
 
-assign out = flattened_outfmap;
+assign out = flattened_outfmap[0][0];
 
 ///////////////////
 // FSM VARIABLES // 

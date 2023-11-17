@@ -22,9 +22,7 @@ logic signed [1:0] weights_mem [NUM_FEATURES][KERNEL_SIZE*KERNEL_SIZE];
 // It has to output all the weights at the same because of the way the MAC calculations are done:
 // All the feature weights are used simultaneously by the PEs on the same part of the image input so 
 // all the weights have to be accessed at the same time. 
-always_comb begin
-    weights_output = weights_mem;
-end
+assign weights_output = weights_mem;
 
 // Writing new weights to the weight memory only when feature_WrEn is low (active low) or on negedge of clk
 always_ff @(negedge clk, negedge rst) begin
