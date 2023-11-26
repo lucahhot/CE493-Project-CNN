@@ -5,19 +5,34 @@ module CNN #(
     parameter IMAGE_HEIGHT = 12,
     parameter NUM_FEATURES = 2,
     parameter KERNEL_SIZE = 3,
-    parameter DATA_WIDTH = 8 // Determines the bit width precision we use in the design throughout
+    parameter CONVOLUTION_WIDTH  = 10, // = (IMAGE_WIDTH-KERNEL_SIZE)/STRIDE+1
+    parameter CONVOLUTION_HEIGHT = 10, // = (IMAGE_HEIGHT-KERNEL_SIZE)/STRIDE+1
+    parameter POOLED_WIDTH = 5, // = CONVOLUTION_WIDTH >> 1
+    parameter POOLED_HEIGHT = 5, // = CONVOLUTION_HEIGHT >> 1
+    parameter FLATTENED_LENGTH = 50, // = POOLED_WIDTH * POOLED_HEIGHT * NUM_FEATURES;
+    parameter CONVOLUTION_DATA_WIDTH = 8, // Determines the bit width precision we use from CONVOLUTION to FLATTENING
+
+    // Will need a parameter to store the value to which output has to be normalized to obtain a percentage at the end
+    parameter FULLYCONNECTED_DATA_WIDTH = 8, // Determines the bit width precision we use for fullyconnected weights
+    parameter OUTPUT_DATA_WIDTH = 32 // Determines the bit width precision we use for output (should be large enough to 
+    // contain multiplicatin between CONVOLUTION_DATA_WIDTH and FULLYCONNECTED_DATA_WIDTH)
+
+
 )(
     input logic signed [1:0] image_input [IMAGE_HEIGHT][IMAGE_WIDTH], // 2D image input 
-    input logic signed [1:0] weights_input [KERNEL_SIZE*KERNEL_SIZE], // Weights for 1 feature
+    input logic signed [1:0] feature_weights_input [KERNEL_SIZE*KERNEL_SIZE], // Weights for 1 feature
     input logic [$clog2(NUM_FEATURES):0] feature_writeAddr, // Address or feature number for which feature we want to write to
-    input logic feature_WrEn, // Write enable for writing new weights into the feature_memory (active-low)
+    input logic feature_WrEn, // Write enable for writing new weights into the feature memory (active-low)
+    input logic [CONVOLUTION_DATA_WIDTH-1:0] fullyconnected_weights_input [FLATTENED_LENGTH], // Weights for the fully connected layer
+    input logic fullyconnected_WrEn, // Write enable for writing new weights into the fullyconnected memory (active-low)
     input logic clk, // Main clock for the entire chip
     input logic rst_cnn, // Active-low reset signal to reset the convolution process
-    input logic rst_weights, // Active-low reset signal to reset all the feature weights to 0
+    input logic rst_feature_weights, // Active-low reset signal to reset all the feature weights to 0
+    input logic rst_fullyconnected_weights, // Active-low reset signal to reset all the fullyconnected weights to 0
     input logic convolution_enable, // Active-low enable signal to start convolution (DOES NOT RESET CNN)
 
     // Dummy output for now for synthesis tool to calculate timing (the first value of the first feature's flattened output)
-    output logic [DATA_WIDTH-1:0] out
+    output logic [OUTPUT_DATA_WIDTH-1:0] cnn_output
 
 );
 
@@ -26,26 +41,18 @@ parameter STRIDE = 1;
 // POOLING_STRIDE is assumed to be 2 so we can left shift by 1 to represent a division by 2
 parameter POOLING_STRIDE = 2;
 
-// Parameters to hold the output dimensions for the convolution_outfmap post convolution
-parameter CONVOLUTION_WIDTH = (IMAGE_WIDTH-KERNEL_SIZE)+1;
-parameter CONVOLUTION_HEIGHT = (IMAGE_HEIGHT-KERNEL_SIZE)+1;
-// Parameters to hold the output dimensions for the pooled_outfmap post pooling
-parameter POOLED_WIDTH = CONVOLUTION_WIDTH >> 1;
-parameter POOLED_HEIGHT = CONVOLUTION_HEIGHT >> 1;
-// parameter to hold the outdimension for the flattened_outfmap post flattening
-parameter FLATTENED_LENGTH = POOLED_WIDTH * POOLED_HEIGHT * NUM_FEATURES;
-
 ///////////////////////
 // FEATURE VARIABLES //
 ///////////////////////
 
-// Register to hold current weights inside of weights
-logic signed [1:0] weights [NUM_FEATURES][KERNEL_SIZE*KERNEL_SIZE];
+// Register to hold current feature weights inside 
+logic signed [1:0] feature_weights [NUM_FEATURES][KERNEL_SIZE*KERNEL_SIZE];
 
 // Instatiation of feature weight memory block which will hold all our feature weights and will allow
 // for writing new feature weights from outside the chip versus hard coding them all. The PEs will also 
 // read the weights from this memory block.
-FeatureMem #(KERNEL_SIZE, NUM_FEATURES) weights_mem(.address_w(feature_writeAddr),.feature_WrEn(feature_WrEn), .clk(clk),.rst(rst_weights),.weights_input(weights_input),.weights_output(weights));
+FeatureMem #(KERNEL_SIZE, NUM_FEATURES) feature_weights_mem(.address_w(feature_writeAddr),.feature_WrEn(feature_WrEn), 
+.clk(clk),.rst(rst_feature_weights),.feature_weights_input(feature_weights_input),.feature_weights_output(feature_weights));
 
 ///////////////////////////
 // CONVOLUTION VARIABLES // 
@@ -53,10 +60,10 @@ FeatureMem #(KERNEL_SIZE, NUM_FEATURES) weights_mem(.address_w(feature_writeAddr
 
 // 3D array output of the first convolution layer (will end up with NUM_FEATURES x 2D arrays)
 // (is unsigned since all the negative values should have been converted to 0)
-logic [DATA_WIDTH-1:0] convolution_outfmap [NUM_FEATURES][CONVOLUTION_HEIGHT][CONVOLUTION_WIDTH];
+logic [CONVOLUTION_DATA_WIDTH-1:0] convolution_outfmap [NUM_FEATURES][CONVOLUTION_HEIGHT][CONVOLUTION_WIDTH];
 
 // 2D array to hold values of psums from each PE to feed them into the next PEs
-logic signed [DATA_WIDTH-1:0] psum_values [NUM_FEATURES][KERNEL_SIZE*KERNEL_SIZE];
+logic signed [CONVOLUTION_DATA_WIDTH-1:0] psum_values [NUM_FEATURES][KERNEL_SIZE*KERNEL_SIZE];
 
 // This KERNEL_SIZE * KERNEL_SIZE array will hold the current infmap tile values to feed into the 
 // PE array and will be updated every clock cycle to hold a new tile from the image input
@@ -70,38 +77,76 @@ int image_row, image_col;
 ///////////////////////
 
 // 3D pooled_outfmap after max pooling (dimensions are changed with pooling)
-logic [DATA_WIDTH-1:0] pooled_outfmap [NUM_FEATURES][(POOLED_HEIGHT)][(POOLED_WIDTH)];
+logic [CONVOLUTION_DATA_WIDTH-1:0] pooled_outfmap [NUM_FEATURES][(POOLED_HEIGHT)][(POOLED_WIDTH)];
 
 // Creating the combinational version of the above register to be updated in the combinational always_comb statement
-logic [DATA_WIDTH-1:0] pooled_outfmap_c [NUM_FEATURES][(POOLED_HEIGHT)][(POOLED_WIDTH)];
+logic [CONVOLUTION_DATA_WIDTH-1:0] pooled_outfmap_c [NUM_FEATURES][(POOLED_HEIGHT)][(POOLED_WIDTH)];
+
+// Start signal to start pooling during stage POOLING
+logic pool_start;
+
+// Instantiation of PoolingModule block which performs pooling when start signal pool_start is asserted high
+PoolingModule #(NUM_FEATURES,POOLING_STRIDE,POOLED_HEIGHT,POOLED_WIDTH,CONVOLUTION_HEIGHT,CONVOLUTION_WIDTH,CONVOLUTION_DATA_WIDTH) 
+pooling_block(.pool_start(pool_start),.convolution_outfmap(convolution_outfmap),.pooled_outfmap_c(pooled_outfmap_c));
 
 //////////////////////////
 // FLATTENING VARIABLES //
 //////////////////////////
 
-// 2D flattened_outfmap after flattening layer 
-logic [DATA_WIDTH-1:0] flattened_outfmap [NUM_FEATURES][FLATTENED_LENGTH];
+// 1D flattened_outfmap after flattening layer 
+logic [CONVOLUTION_DATA_WIDTH-1:0] flattened_outfmap [FLATTENED_LENGTH];
 
 // Combinational version of the above to be updated in the combinational always_comb statement
-logic [DATA_WIDTH-1:0] flattened_outfmap_c [NUM_FEATURES][FLATTENED_LENGTH];
+logic [CONVOLUTION_DATA_WIDTH-1:0] flattened_outfmap_c [FLATTENED_LENGTH];
 
-assign out = flattened_outfmap[0][0];
+// Start signal to start flattening during stage FLATTENING
+logic flatten_start;
+
+// Instantiation of FlatteningModule block which performs flattening when start signal flatten_start is asserted high
+FlatteningModule #(NUM_FEATURES,POOLED_HEIGHT,POOLED_WIDTH,FLATTENED_LENGTH,CONVOLUTION_DATA_WIDTH)
+flattening_block(.flatten_start(flatten_start),.pooled_outfmap(pooled_outfmap),.flattened_outfmap_c(flattened_outfmap_c));
+
+//////////////////////////////
+// FULLYCONNECTED VARIABLES //
+//////////////////////////////
+
+// Register to hold current fullyconnected weights 
+logic [FULLYCONNECTED_DATA_WIDTH - 1:0] fullyconnected_weights [FLATTENED_LENGTH];
+
+// Instatiation of fullyconnected weights memory block to hold fullyconnected weights for the FULLYCONNECTED layer 
+// to use when determining a final output
+FullyConnectedMem #(FLATTENED_LENGTH,FULLYCONNECTED_DATA_WIDTH) fullyconnected_weights_mem(.fullyconnected_WrEn(fullyconnected_WrEn),.clk(clk),
+.rst(rst_fullyconnected_weights),.fullyconnected_weights_input(fullyconnected_weights_input),.fullyconnected_weights_output(fullyconnected_weights));
+
+// Scalar value after fullyconnected layer that's clocked and is the CNN output
+logic [OUTPUT_DATA_WIDTH-1:0] fullyconected_output;
+
+// Combinational value of fullyconnected output
+logic [OUTPUT_DATA_WIDTH-1:0] fullyconnected_output_c;
+
+// Start signal to start fullyconnected layer during stage FULLYCONNECTED
+logic fullyconnect_start;
+
+// Instantiation of FullyConnectedModule block which performs the fullyconnected layer when start signal fullyconnect_start is asserted high
+FullyConnectedModule #(FLATTENED_LENGTH,CONVOLUTION_DATA_WIDTH,FULLYCONNECTED_DATA_WIDTH,OUTPUT_DATA_WIDTH)
+fullyconnected_block(.fullyconnect_start(fullyconnect_start),.flattened_outfmap(flattened_outfmap),.fullyconnected_weights(fullyconnected_weights),.fullyconnected_output_c(fullyconnected_output_c));
 
 ///////////////////
 // FSM VARIABLES // 
 ///////////////////
 
 // States for the FSM to go through the various stages of the CNN model
-parameter IDLE = 0, CONVOLUTION = 1, POOLING = 2, FLATTENING = 3, DENSE = 4, OUTPUT = 5;
+parameter IDLE = 0, CONVOLUTION = 1, POOLING = 2, FLATTENING = 3, FULLYCONNECTED = 4, OUTPUT = 5;
 logic [2:0] state, next_state;
 
 always_ff @(negedge clk, negedge rst_cnn) begin
     // If rst_cnn is asserted, reset convolution_outfmap and psum_values to all 0.
     // Also reset all the variables used to loop through the input image to create the correct image tiles
     if(!rst_cnn) begin
-        convolution_outfmap <= '{default: '0};
-        pooled_outfmap <= '{default: '0};
-        flattened_outfmap <= '{default: '0};
+        convolution_outfmap <= '{default: 'X};
+        pooled_outfmap <= '{default: 'X};
+        flattened_outfmap <= '{default: 'X};
+        fullyconected_output <= '{default: 'X};
         image_row <= 0;
         image_col <= 0;
         state <= IDLE;
@@ -111,6 +156,7 @@ always_ff @(negedge clk, negedge rst_cnn) begin
         state <= next_state;
         pooled_outfmap <= pooled_outfmap_c;
         flattened_outfmap <= flattened_outfmap_c;
+        fullyconected_output <= fullyconnected_output_c;
         // If FSM is in state CONVOLUTION
         if (state == CONVOLUTION) begin
             // Combinational process to update the last psum value in the accumulation back into convolution_outfmap for all features
@@ -130,6 +176,9 @@ always_ff @(negedge clk, negedge rst_cnn) begin
                 image_col <= image_col + STRIDE;
             
         end
+        // If FSM is in state OUTPUT, output CNN output to fullyconnected_output
+        if (state == OUTPUT) 
+            cnn_output <= fullyconected_output;
     end  
 end    
 
@@ -138,8 +187,12 @@ always_comb begin
     // Default variable assignments
     next_state = state;
     infmap_tile = '{default: '0};
-    pooled_outfmap_c = pooled_outfmap;
-    flattened_outfmap_c = flattened_outfmap;
+    // pooled_outfmap_c = pooled_outfmap;
+    // flattened_outfmap_c = flattened_outfmap;
+    // fullyconnected_output_c = fullyconected_output;
+    pool_start = 0;
+    flatten_start = 0;
+    fullyconnect_start = 0;
 
     // Checking through all the states
     case (state) 
@@ -171,51 +224,32 @@ always_comb begin
 
         // Pooling state performs a max pool with the POOLING_STRIDE stride length 
         POOLING: begin
-            int max,row,col;
-            // Loop through the all the features in convolution_outfmap in POOLING_STRIDE x POOLING_STRIDE tiles and place the 
-            // maximum value into the corresponding position in pooled_outfmap_c
-            for (int feature = 0; feature < NUM_FEATURES; feature = feature + 1) begin
-                row = 0; 
-                for (int convolution_row = 0; convolution_row < CONVOLUTION_HEIGHT; convolution_row = convolution_row + POOLING_STRIDE) begin
-                    col = 0;
-                    for (int convolution_col = 0; convolution_col < CONVOLUTION_WIDTH; convolution_col = convolution_col + POOLING_STRIDE) begin
-                        max = 0;
-                        // Secondary nested for loop for each individual pooling tile
-                        for (int pooling_row = 0; pooling_row < POOLING_STRIDE; pooling_row = pooling_row + 1) begin
-                            for (int pooling_col = 0; pooling_col < POOLING_STRIDE; pooling_col = pooling_col + 1) begin
-                                // Check if current element position is inside of convolution_outfmap bounds
-                                if ((pooling_row + convolution_row) < CONVOLUTION_HEIGHT && (pooling_col + convolution_col) < CONVOLUTION_WIDTH) begin
-                                    // Check if current position value is greater than current max
-                                    if (convolution_outfmap[feature][pooling_row + convolution_row][pooling_col + convolution_col] > max)
-                                        max = convolution_outfmap[feature][pooling_row + convolution_row][pooling_col + convolution_col];
-                                end
-                            end
-                        end
-                        // Put our max position into pooled_outfmap
-                        pooled_outfmap_c[feature][row][col] = max;
-                        col = col + 1;
-                    end
-                    row = row + 1;
-                end
-                next_state = FLATTENING;
-            end
+            // Start signal to start pooling inside of pooling_block
+            pool_start = 1;
+            next_state = FLATTENING;
         end
 
         // Flattening state flattens all the pooled_outfmaps into a 1 dimensional array
         FLATTENING: begin
-            int flattened_index;
-            flattened_index = 0;
-            // Loop through pooled_outfmap and place the values into flattened_outfmap_c
-            for (int feature = 0; feature < NUM_FEATURES; feature = feature + 1) begin
-                for (int pooled_row = 0; pooled_row < POOLED_HEIGHT; pooled_row = pooled_row + 1) begin
-                    for (int pooled_col = 0; pooled_col < POOLED_WIDTH; pooled_col = pooled_col + 1) begin
-                        flattened_outfmap_c[feature][flattened_index] = pooled_outfmap[feature][pooled_row][pooled_col];
-                        flattened_index = flattened_index + 1;
-                    end
-                end
-            end
-            next_state = DENSE;
+            // Start signal to start flattening inside of flattening_block
+            flatten_start = 1;
+            next_state = FULLYCONNECTED;
         end
+
+        // Fully connected layer (with no hidden layers) applies a generated set of weights to each 
+        // value in the flattened values to generate 1 single output value for the CNN
+        FULLYCONNECTED: begin
+            // Start signal so start the fully connected layer
+            fullyconnect_start = 1;
+            next_state = OUTPUT;
+        end
+
+        // During this state, the clocked always block will update CNN output to fullyconnected_output
+        OUTPUT: begin
+            next_state = IDLE;
+        end
+
+        default: next_state = IDLE;
 
     endcase
             
@@ -230,16 +264,16 @@ for (pe_col = 0; pe_col < NUM_FEATURES; pe_col = pe_col + 1) begin
 
         // First row PE takes an inpsum of 0 as accumulation has not started yet
         if (pe_row == 0) 
-            ConvolutionPE #(DATA_WIDTH) first_PE(.inpsum('{default: '0}),
-                                   .weight(weights[pe_col][pe_row]),
+            ConvolutionPE #(CONVOLUTION_DATA_WIDTH) first_PE(.inpsum('{default: '0}),
+                                   .weight(feature_weights[pe_col][pe_row]),
                                    .infmap_value(infmap_tile[pe_row]),
                                    .outpsum(psum_values[pe_col][pe_row]));
 
         // Other PEs take an inpsum from the previous PE's outpsum
         // The last PE will leave the accumulated psum in the last index of psum_values for the corresponding feature
         else
-            ConvolutionPE #(DATA_WIDTH) middle_PE(.inpsum(psum_values[pe_col][pe_row - 1]),
-                                    .weight(weights[pe_col][pe_row]),
+            ConvolutionPE #(CONVOLUTION_DATA_WIDTH) middle_PE(.inpsum(psum_values[pe_col][pe_row - 1]),
+                                    .weight(feature_weights[pe_col][pe_row]),
                                     .infmap_value(infmap_tile[pe_row]),
                                     .outpsum(psum_values[pe_col][pe_row]));
     end

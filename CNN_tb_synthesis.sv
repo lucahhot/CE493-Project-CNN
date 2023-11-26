@@ -5,8 +5,17 @@ module CNN_tb_synthesis #(
     parameter IMAGE_HEIGHT = 12,
     parameter NUM_FEATURES = 2,
     parameter KERNEL_SIZE = 3,
-    parameter DATA_WIDTH = 8
+    parameter DATA_WIDTH = 8,
+    parameter CONVOLUTION_WIDTH  = 10, 
+    parameter CONVOLUTION_HEIGHT = 10, 
+    parameter POOLED_WIDTH = 5, 
+    parameter POOLED_HEIGHT = 5, 
+    parameter FLATTENED_LENGTH = 50, 
+    parameter CONVOLUTION_DATA_WIDTH = 8, 
+    parameter FULLYCONNECTED_DATA_WIDTH = 8, 
+    parameter OUTPUT_DATA_WIDTH = 32 
 );
+
 
     logic signed [1:0] image [IMAGE_HEIGHT][IMAGE_WIDTH];
     logic signed [1:0] feature [KERNEL_SIZE*KERNEL_SIZE];
@@ -16,17 +25,12 @@ module CNN_tb_synthesis #(
     logic rst_cnn;
     logic rst_weights;
     logic enable;
+    logic signed [CONVOLUTION_DATA_WIDTH-1:0] fullyconnected_weights_input [FLATTENED_LENGTH];
+    logic fullyconnected_WrEn;
+    logic rst_fullyconnected_weights;
+    logic [OUTPUT_DATA_WIDTH-1:0] cnn_output;
 
-    parameter IDLE = 0, CONVOLUTION = 1, POOLING = 2, FLATTENING = 3, DENSE = 4;
-    parameter STRIDE = 1;
-    parameter POOLING_STRIDE = 2;
-    parameter CONVOLUTION_WIDTH = (IMAGE_WIDTH-KERNEL_SIZE)+1;
-    parameter CONVOLUTION_HEIGHT = (IMAGE_HEIGHT-KERNEL_SIZE)+1;
-    parameter POOLED_WIDTH = CONVOLUTION_WIDTH >> 1;
-    parameter POOLED_HEIGHT = CONVOLUTION_HEIGHT >> 1;
-    parameter FLATTENED_LENGTH = POOLED_WIDTH * POOLED_HEIGHT * NUM_FEATURES;
-
-    logic [DATA_WIDTH-1:0] out;
+    parameter IDLE = 0, CONVOLUTION = 1, POOLING = 2, FLATTENING = 3, FULLYCONNECTED = 4, OUTPUT = 5;
 
     // Packed array of image_input to feed into synthesized netlist (for some reason it only accepts a packed array
     // since it's written in verilog which doesn't support unpacked array IO ports)
@@ -35,17 +39,22 @@ module CNN_tb_synthesis #(
     // Packed array of feature to feed into synthesized netlist 
     logic signed [(2*KERNEL_SIZE*KERNEL_SIZE)-1:0] packed_feature;
 
-    // Files reading/writing variables
-    int infile,convolution_outfile,pooled_outfile,flattened_outfile;
+    // Packed array of fully connected weights to feed into synthesized netlist
+    logic [(FULLYCONNECTED_DATA_WIDTH*FLATTENED_LENGTH)-1:0] packed_fullyconnected_weights;
 
     // Calling functions to pack the unpacked arrays
     pack2d_module #(IMAGE_HEIGHT,IMAGE_WIDTH,2) u1 ();
 
     pack1d_module #(KERNEL_SIZE*KERNEL_SIZE,2) u2 ();
 
-    // Instantiation of CNN for post-synthesized netlist (no parameters included)
-    CNN CNN_dut(.image_input(packed_image),.weights_input(packed_feature),.feature_writeAddr(feature_addr),.feature_WrEn(feature_WrEn),
-                .clk(clk),.rst_cnn(rst_cnn),.rst_weights(rst_weights),.convolution_enable(enable),.out(out));
+    pack1d_module #(FLATTENED_LENGTH,FULLYCONNECTED_DATA_WIDTH) u3 ();
+
+    // Files reading/writing variables
+    int infile,convolution_outfile,pooled_outfile,flattened_outfile,fullyconnected_infile,cnn_outfile;
+
+    // Instantiating an instance of CNN
+    CNN CNN_dut(.image_input(packed_image),.feature_weights_input(packed_feature),.feature_writeAddr(feature_addr),.feature_WrEn(feature_WrEn),.fullyconnected_weights_input(packed_fullyconnected_weights),
+                .fullyconnected_WrEn(fullyconnected_WrEn),.clk(clk),.rst_cnn(rst_cnn),.rst_feature_weights(rst_weights),.rst_fullyconnected_weights(rst_fullyconnected_weights),.convolution_enable(enable),.cnn_output(cnn_output));
 
 
     // Clock with a period of 20ns
@@ -63,12 +72,15 @@ module CNN_tb_synthesis #(
         feature_WrEn = 1;
         rst_cnn = 1;
         rst_weights = 1;
+        rst_fullyconnected_weights = 1;
         #10
         rst_cnn = 0;
         rst_weights = 0;
+        rst_fullyconnected_weights = 0;
         #10
         rst_cnn = 1;
         rst_weights = 1;
+        rst_fullyconnected_weights = 1;
 
         $display($time,"ns: Finished reseting CNN, loading feature maps into feature memory...\n");
 
@@ -88,6 +100,25 @@ module CNN_tb_synthesis #(
         @(negedge clk);
         @(negedge clk);
         feature_WrEn = 1;
+
+        $display($time,"ns: Finished loading feature maps, loading fully connected weights into fully connected memory...\n");
+
+        fullyconnected_WrEn = 0;
+        // Reading in fullyconnected weights from a text file
+        fullyconnected_infile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/fullyconnected_input.txt","r");
+        if (fullyconnected_infile)  $display("File was opened successfully : %0d\n", fullyconnected_infile);
+        else         $display("File was NOT opened successfully : %0d\n", fullyconnected_infile);
+
+        for(int i = 0; i < FLATTENED_LENGTH; i = i + 1) begin
+                void'($fscanf(fullyconnected_infile,"%d",fullyconnected_weights_input[i]));
+        end
+        $fclose(fullyconnected_infile);
+
+        packed_fullyconnected_weights = u3.pack1d(fullyconnected_weights_input);
+
+        @(negedge clk);
+        @(negedge clk);
+        fullyconnected_WrEn = 1;
 
         $display($time,"ns: Reading 2D input image from input text file...\n");
 
@@ -114,10 +145,23 @@ module CNN_tb_synthesis #(
         @(posedge clk);
         enable = 1;
 
-        // Wait until state == POOLING to check convolution output
-        wait(CNN_dut.state == DENSE);
+        // Wait until state == IDLE to check cnn_output, which should be the output of FULLYCONNECTED too
+        wait(CNN_dut.state == IDLE);
 
         #20
+
+        $display($time,"ns: Writing cnn_output into cnn_output text file...\n");
+
+        // write out cnn_output back into a text file
+        cnn_outfile = $fopen("cnn_output_synthesis.txt","w");
+        if (cnn_outfile)  $display("File was opened successfully : %0d\n", cnn_outfile);
+        else         $display("File was NOT opened successfully : %0d\n", cnn_outfile);
+
+        $fwrite(cnn_outfile,"cnn_output: \n");
+        $fwrite(cnn_outfile,"%0d\n",cnn_output);
+        $fwrite(cnn_outfile,"\n");
+
+        $fclose(cnn_outfile);
 
         $display($time,"ns: Finished testing...\n");
         
