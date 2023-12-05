@@ -1,33 +1,41 @@
 `timescale 1ns/1ps
 
 module CNN_tb #(
-    parameter IMAGE_WIDTH = 12,
-    parameter IMAGE_HEIGHT = 12,
-    parameter NUM_FEATURES = 2,
-    parameter KERNEL_SIZE = 3,
-    parameter DATA_WIDTH = 8,
-    parameter CONVOLUTION_WIDTH  = 10, 
-    parameter CONVOLUTION_HEIGHT = 10, 
-    parameter POOLED_WIDTH = 5, 
-    parameter POOLED_HEIGHT = 5, 
-    parameter FLATTENED_LENGTH = 50, 
-    parameter CONVOLUTION_DATA_WIDTH = 8, 
-    parameter FULLYCONNECTED_DATA_WIDTH = 8, 
-    parameter OUTPUT_DATA_WIDTH = 32 
+    parameter IMAGE_WIDTH = 28,
+    parameter IMAGE_HEIGHT = 28,
+    parameter NUM_FEATURES = 3,
+    parameter KERNEL_SIZE = 4,
+    parameter CONVOLUTION_WIDTH =25, // = (IMAGE_WIDTH-KERNEL_SIZE)/STRIDE+1
+    parameter CONVOLUTION_HEIGHT = 25, // = (IMAGE_HEIGHT-KERNEL_SIZE)/STRIDE+1
+    parameter POOLED_WIDTH = 12, // = CONVOLUTION_WIDTH >> 1
+    parameter POOLED_HEIGHT = 12, // = CONVOLUTION_HEIGHT >> 1
+    parameter FLATTENED_LENGTH = 432, // = POOLED_WIDTH * POOLED_HEIGHT * NUM_FEATURES;
+    parameter DATA_WIDTH = 8, // Everything inside the CNN should be 8 bits wide
+    parameter PSUM_DATA_WIDTH = 12, // Need extra bits to add all the psums
+    parameter FULLYCONNECTED_DATA_WIDTH = 32
 );
 
-    logic signed [1:0] image [IMAGE_HEIGHT][IMAGE_WIDTH];
-    logic signed [1:0] feature [KERNEL_SIZE*KERNEL_SIZE];
-    logic [$clog2(NUM_FEATURES):0] feature_addr;
+    logic image [IMAGE_HEIGHT][IMAGE_WIDTH];
+
+    logic signed [DATA_WIDTH-1:0] feature [KERNEL_SIZE*KERNEL_SIZE];
+    logic [1:0] feature_addr;
     logic feature_WrEn;
-    logic clk;
-    logic rst_cnn;
-    logic rst_weights;
-    logic enable;
-    logic [CONVOLUTION_DATA_WIDTH-1:0] fullyconnected_weights_input [FLATTENED_LENGTH];
+    logic rst_feature_weights;
+
+    logic signed [DATA_WIDTH-1:0] biases [NUM_FEATURES+1];
+    logic bias_WrEn;
+    logic rst_bias_weights;
+
+    logic signed [DATA_WIDTH-1:0] fullyconnected_weights_input [16];
+    logic [4:0] fullyconnected_writeAddr;
     logic fullyconnected_WrEn;
     logic rst_fullyconnected_weights;
-    logic [OUTPUT_DATA_WIDTH-1:0] cnn_output;
+
+    logic clk;
+    logic rst_cnn;
+    logic enable;
+
+    logic [DATA_WIDTH-1:0] cnn_output;
 
     parameter IDLE = 0, CONVOLUTION = 1, POOLING = 2, FLATTENING = 3, FULLYCONNECTED = 4, OUTPUT = 5;
 
@@ -35,9 +43,8 @@ module CNN_tb #(
     int infile,convolution_outfile,pooled_outfile,flattened_outfile,fullyconnected_infile,cnn_outfile;
 
     // Instantiating an instance of CNN
-    CNN #(IMAGE_WIDTH,IMAGE_HEIGHT,NUM_FEATURES,KERNEL_SIZE,CONVOLUTION_WIDTH,CONVOLUTION_HEIGHT,POOLED_WIDTH,POOLED_HEIGHT,FLATTENED_LENGTH,CONVOLUTION_DATA_WIDTH,FULLYCONNECTED_DATA_WIDTH,OUTPUT_DATA_WIDTH)
-    CNN_dut(.image_input(image),.feature_weights_input(feature),.feature_writeAddr(feature_addr),.feature_WrEn(feature_WrEn),.fullyconnected_weights_input(fullyconnected_weights_input),
-            .fullyconnected_WrEn(fullyconnected_WrEn),.clk(clk),.rst_cnn(rst_cnn),.rst_feature_weights(rst_weights),.rst_fullyconnected_weights(rst_fullyconnected_weights),.convolution_enable(enable),.cnn_output(cnn_output));
+    CNN CNN_dut(.image_input(image),.feature_weights_input(feature),.feature_writeAddr(feature_addr),.feature_WrEn(feature_WrEn),.rst_feature_weights(rst_feature_weights),.bias_weights_input(biases),.bias_WrEn(bias_WrEn),.rst_bias_weights(rst_bias_weights),
+                .fullyconnected_weights_input(fullyconnected_weights_input),.fullyconnected_writeAddr(fullyconnected_writeAddr),.fullyconnected_WrEn(fullyconnected_WrEn),.rst_fullyconnected_weights(rst_fullyconnected_weights),.clk(clk),.rst_cnn(rst_cnn),.convolution_enable(enable),.cnn_output(cnn_output));
 
     // Clock with a period of 20ns
     always
@@ -53,15 +60,18 @@ module CNN_tb #(
         enable = 1;
         feature_WrEn = 1;
         rst_cnn = 1;
-        rst_weights = 1;
+        rst_feature_weights = 1;
+        rst_bias_weights = 1;
         rst_fullyconnected_weights = 1;
         #10
         rst_cnn = 0;
-        rst_weights = 0;
+        rst_feature_weights = 0;
+        rst_bias_weights = 0;
         rst_fullyconnected_weights = 0;
         #10
         rst_cnn = 1;
-        rst_weights = 1;
+        rst_feature_weights = 1;
+        rst_bias_weights = 1;
         rst_fullyconnected_weights = 1;
 
         $display($time,"ns: Finished reseting CNN, loading feature maps into feature memory...\n");
@@ -70,16 +80,35 @@ module CNN_tb #(
         feature_WrEn = 0;
         feature_addr = 0;
         // Feature is an "X" shape (flattened)
-        feature = '{1, -1, 1, -1, 1, -1, 1, -1, 1};
+        // feature = '{127,-127,127,-127,-127,127,-127,-127,127,-127,127,-127,-127,-127,-127,-127};
+        // Feature #1 for quantized model (12/04/23)
+        feature = '{-53,43,-53,-83,-10,11,-26,72,-2,75,55,-36,-24,62,39,26};
         // Wait 1 clock pulse for feature map to loaded into memory
         @(negedge clk);
         @(negedge clk);
         // Write second feature map into feature memory
         feature_addr = 1;
-        feature = '{1,1,1,1,1,1,1,1,1};
+        // feature = '{127,127,127,127,127,127,127,127,127,127,127,127,127,127,127,127};
+        // Feature #2 for quantized model (12/04/23)
+        feature = '{-35,-17,49,-37,-93,49,88,-40,-39,15,-3,22,74,76,-59,21};
+        @(negedge clk);
+        @(negedge clk);
+        // Write third feature map into feature memory
+        feature_addr = 2;
+        // feature = '{-127,-127,-127,-127,-127,-127,-127,-127,-127,-127,-127,-127,-127,-127,-127,-127};
+        // Feature #3 for quantized model (12/04/23)
+        feature = '{31,2,-47,69,64,16,-4,-83,42,40,66,-50,3,-59,69,18};
         @(negedge clk);
         @(negedge clk);
         feature_WrEn = 1;
+
+        // Write biases into bias memory
+        bias_WrEn = 0;
+        // Biases for quantized model (12/04/23)
+        biases = '{10,0,0,-8};
+        @(negedge clk);
+        @(negedge clk);
+        bias_WrEn = 1;
 
         $display($time,"ns: Finished loading feature maps, loading fully connected weights into fully connected memory...\n");
 
@@ -89,13 +118,18 @@ module CNN_tb #(
         if (fullyconnected_infile)  $display("File was opened successfully : %0d\n", fullyconnected_infile);
         else         $display("File was NOT opened successfully : %0d\n", fullyconnected_infile);
 
-        for(int i = 0; i < FLATTENED_LENGTH; i = i + 1) begin
+        fullyconnected_writeAddr = 0;
+        
+        for(int fullyconnected_index = 0; fullyconnected_index < FLATTENED_LENGTH; fullyconnected_index = fullyconnected_index + 16) begin
+            for(int i = 0; i < 16; i = i + 1) begin
                 void'($fscanf(fullyconnected_infile,"%d",fullyconnected_weights_input[i]));
+            end
+            @(negedge clk);
+            @(negedge clk);
+            fullyconnected_writeAddr = fullyconnected_writeAddr + 1;
         end
         $fclose(fullyconnected_infile);
 
-        @(negedge clk);
-        @(negedge clk);
         fullyconnected_WrEn = 1;
 
         $display($time,"ns: Reading 2D input image from input text file...\n");

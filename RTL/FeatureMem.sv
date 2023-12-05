@@ -1,22 +1,24 @@
 `timescale 1ns/1ps
 
 module FeatureMem #(
-    parameter KERNEL_SIZE = 3,
-    parameter NUM_FEATURES = 10
+    // MUST be overwritten in CNN
+    parameter KERNEL_SIZE = 4,
+    parameter NUM_FEATURES = 3,
+    parameter DATA_WIDTH = 8
 )(
-    input logic [$clog2(NUM_FEATURES):0] address_w, // Write address
+    input logic [1:0] address_w, // Write address
     input logic feature_WrEn, // Write enable for the weights memory
     input logic clk, // Writes new data synchronized with the main chip clock
     input logic rst, // Active-low reset to reset all weights inside the memory
-    input logic signed [1:0] feature_weights_input [KERNEL_SIZE*KERNEL_SIZE], // Weight input
-    output logic signed [1:0] feature_weights_output [NUM_FEATURES][KERNEL_SIZE*KERNEL_SIZE] // Weights output
+    input logic signed [DATA_WIDTH-1:0] feature_weights_input [KERNEL_SIZE*KERNEL_SIZE], // Weight input
+    output logic signed [DATA_WIDTH-1:0] feature_weights_output [NUM_FEATURES][KERNEL_SIZE*KERNEL_SIZE] // Weights output
 );
 
 // Memory for feature weights stored in a 2D array:
 // Each feature will have it's own KERNEL_SIZE * KERNELS_SIZE array of weight value
 // For example, if the feature has a 3x3 feature map, the array will be a 1 dimensional
 // 9 element flattened array of the feature weights. 
-logic signed [1:0] feature_weights_mem [NUM_FEATURES][KERNEL_SIZE*KERNEL_SIZE];
+logic signed [DATA_WIDTH-1:0] feature_weights_mem [NUM_FEATURES][KERNEL_SIZE*KERNEL_SIZE];
 
 // Outputs all the feature weights inside feature_weights_mem. 
 // It has to output all the feature weights at the same because of the way the MAC calculations are done:

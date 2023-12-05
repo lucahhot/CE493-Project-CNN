@@ -2,15 +2,15 @@
 
 module FlatteningModule #(
     // These parameters MUST be overwritten in CNN
-    parameter NUM_FEATURES = 10,
-    parameter POOLED_HEIGHT = 10,
-    parameter POOLED_WIDTH = 10,
-    parameter FLATTENED_LENGTH = 10,
-    parameter CONVOLUTION_DATA_WIDTH = 8
+    parameter NUM_FEATURES = 3,
+    parameter POOLED_HEIGHT = 12,
+    parameter POOLED_WIDTH = 12,
+    parameter FLATTENED_LENGTH = 432,
+    parameter DATA_WIDTH = 8
 )(
     input logic flatten_start, // Start signal to start flattening
-    input logic [CONVOLUTION_DATA_WIDTH-1:0] pooled_outfmap [NUM_FEATURES][(POOLED_HEIGHT)][(POOLED_WIDTH)],
-    output logic [CONVOLUTION_DATA_WIDTH-1:0] flattened_outfmap_c [FLATTENED_LENGTH]
+    input logic [DATA_WIDTH-1:0] pooled_outfmap [NUM_FEATURES][POOLED_HEIGHT][POOLED_WIDTH],
+    output logic [DATA_WIDTH-1:0] flattened_outfmap_c [FLATTENED_LENGTH]
 );
 
 // Combinational module that flattens the 2D pooled output from the pooling layer and outputs
