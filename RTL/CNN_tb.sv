@@ -11,8 +11,8 @@ module CNN_tb #(
     parameter POOLED_HEIGHT = 12, // = CONVOLUTION_HEIGHT >> 1
     parameter FLATTENED_LENGTH = 432, // = POOLED_WIDTH * POOLED_HEIGHT * NUM_FEATURES;
     parameter DATA_WIDTH = 8, // Everything inside the CNN should be 8 bits wide
-    parameter BIAS_DATA_WIDTH = 32,
-    parameter PSUM_DATA_WIDTH = 32, // Need extra bits to add all the psums
+    parameter BIAS_DATA_WIDTH = 8,
+    parameter PSUM_DATA_WIDTH = 12, // Need extra bits to add all the psums
     parameter FULLYCONNECTED_DATA_WIDTH = 32
 );
 
@@ -41,7 +41,7 @@ module CNN_tb #(
     parameter IDLE = 0, CONVOLUTION = 1, POOLING = 2, FLATTENING = 3, FULLYCONNECTED = 4, OUTPUT = 5;
 
     // Files reading/writing variables
-    int infile,convolution_outfile,pooled_outfile,flattened_outfile,fullyconnected_infile,cnn_outfile;
+    int infile,layer_outfile,cnn_outfile;
 
     // Instantiating an instance of CNN
     CNN CNN_dut(.image_input(image),.feature_weights_input(feature),.feature_writeAddr(feature_addr),.feature_WrEn(feature_WrEn),.rst_feature_weights(rst_feature_weights),.bias_weights_input(biases),.bias_WrEn(bias_WrEn),.rst_bias_weights(rst_bias_weights),
@@ -81,20 +81,20 @@ module CNN_tb #(
         feature_WrEn = 0;
         feature_addr = 0;
         // Feature #1 for quantized model (12/06/23)
-        feature = '{-127,-29,-90,9,113,37,65,-1,-86,-62,-103,20,-34,-123,95,92};
+        feature = '{-53,43,-53,-83,-10,11,-26,72,-2,75,55,-36,-24,62,39,26};
         // Wait 1 clock pulse for feature map to loaded into memory
         @(negedge clk);
         @(negedge clk);
         // Write second feature map into feature memory
         feature_addr = 1;
         // Feature #2 for quantized model (12/06/23)
-        feature = '{-7,-127,-85,-98,38,94,-9,84,25,88,95,109,2,90,120,36};
+        feature = '{-35,-17,49,-37,-93,49,88,-40,-39,15,-3,22,74,76,-59,21};
         @(negedge clk);
         @(negedge clk);
         // Write third feature map into feature memory
         feature_addr = 2;
         // Feature #3 for quantized model (12/06/23)
-        feature = '{-61,-4,-22,0,-50,74,87,60,-7,67,56,127,36,45,38,-59};
+        feature = '{31,2,-47,69,64,16,-4,-83,42,40,66,-50,3,-59,69,18};
         @(negedge clk);
         @(negedge clk);
         feature_WrEn = 1;
@@ -102,7 +102,7 @@ module CNN_tb #(
         // Write biases into bias memory
         bias_WrEn = 0;
         // Biases for quantized model (12/04/23)
-        biases = '{1256,-4126,-198,-871};
+        biases = '{10,0,0,-8};
         @(negedge clk);
         @(negedge clk);
         bias_WrEn = 1;
@@ -111,28 +111,28 @@ module CNN_tb #(
 
         fullyconnected_WrEn = 0;
         // Reading in fullyconnected weights from a text file
-        fullyconnected_infile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/fullyconnected_input.txt","r");
-        if (fullyconnected_infile)  $display("File was opened successfully : %0d\n", fullyconnected_infile);
-        else         $display("File was NOT opened successfully : %0d\n", fullyconnected_infile);
+        infile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/fullyconnected_input.txt","r");
+        if (infile)  $display("File was opened successfully : %0d\n", infile);
+        else         $display("File was NOT opened successfully : %0d\n", infile);
 
         fullyconnected_writeAddr = 0;
         
         for(int fullyconnected_index = 0; fullyconnected_index < FLATTENED_LENGTH; fullyconnected_index = fullyconnected_index + 16) begin
             for(int i = 0; i < 16; i = i + 1) begin
-                void'($fscanf(fullyconnected_infile,"%d",fullyconnected_weights_input[i]));
+                void'($fscanf(infile,"%d",fullyconnected_weights_input[i]));
             end
             @(negedge clk);
             @(negedge clk);
             fullyconnected_writeAddr = fullyconnected_writeAddr + 1;
         end
-        $fclose(fullyconnected_infile);
+        $fclose(infile);
 
         fullyconnected_WrEn = 1;
 
         $display($time,"ns: Reading 2D input image from input text file...\n");
 
         // Reading in 2D image from a text file
-        infile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/binary_image_102.txt","r");
+        infile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/binary_image_69.txt","r");
         if (infile)  $display("File was opened successfully : %0d\n", infile);
         else         $display("File was NOT opened successfully : %0d\n", infile);
 
@@ -160,22 +160,22 @@ module CNN_tb #(
         $display($time,"ns: Writing convolution_outfmap results into convolution_output text file...\n");
 
         // Write out convolution_outfmap back into a text file to easily analyze
-        convolution_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/convolution_output.txt","w");
-        if (convolution_outfile)  $display("File was opened successfully : %0d\n", convolution_outfile);
-        else         $display("File was NOT opened successfully : %0d\n", convolution_outfile);
+        layer_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/convolution_output.txt","w");
+        if (layer_outfile)  $display("File was opened successfully : %0d\n", layer_outfile);
+        else         $display("File was NOT opened successfully : %0d\n", layer_outfile);
 
         for (int feature = 0; feature < NUM_FEATURES; feature = feature + 1) begin
-            $fwrite(convolution_outfile,"convolution_outfmap for feature %0d: \n",(feature+1));
+            $fwrite(layer_outfile,"convolution_outfmap for feature %0d: \n",(feature+1));
             for (int i = 0; i < CONVOLUTION_HEIGHT; i = i + 1) begin
                 for (int j = 0; j < CONVOLUTION_WIDTH; j = j + 1) begin
-                    $fwrite(convolution_outfile,"%0d ",CNN_dut.convolution_outfmap[feature][i][j]);
+                    $fwrite(layer_outfile,"%0d ",CNN_dut.convolution_outfmap[feature][i][j]);
                 end
-                $fwrite(convolution_outfile,"\n");
+                $fwrite(layer_outfile,"\n");
             end
-            $fwrite(convolution_outfile,"\n");
+            $fwrite(layer_outfile,"\n");
         end
 
-        $fclose(convolution_outfile);
+        $fclose(layer_outfile);
 
         // Wait until state == FLATTENING to check pooling output
         wait(CNN_dut.state == FLATTENING);
@@ -185,22 +185,41 @@ module CNN_tb #(
         $display($time,"ns: Writing pooled_outfmap results into pooled_output text file...\n");
 
         // Write out pooled_outfmap back into a text file
-        pooled_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/pooled_output.txt","w");
-        if (pooled_outfile)  $display("File was opened successfully : %0d\n", pooled_outfile);
-        else         $display("File was NOT opened successfully : %0d\n", pooled_outfile);
+        layer_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/pooled_output.txt","w");
+        if (layer_outfile)  $display("File was opened successfully : %0d\n", layer_outfile);
+        else         $display("File was NOT opened successfully : %0d\n", layer_outfile);
 
         for (int feature = 0; feature < NUM_FEATURES; feature = feature + 1) begin
-            $fwrite(pooled_outfile,"pooled_outfmap for feature %0d: \n",(feature+1));
+            $fwrite(layer_outfile,"pooled_outfmap for feature %0d: \n",(feature+1));
             for (int i = 0; i < POOLED_HEIGHT; i = i + 1) begin
                 for (int j = 0; j < POOLED_WIDTH; j = j + 1) begin
-                    $fwrite(pooled_outfile,"%0d ",CNN_dut.pooled_outfmap[feature][i][j]);
+                    $fwrite(layer_outfile,"%0d ",CNN_dut.pooled_outfmap[feature][i][j]);
                 end
-                $fwrite(pooled_outfile,"\n");
+                $fwrite(layer_outfile,"\n");
             end
-            $fwrite(pooled_outfile,"\n");
+            $fwrite(layer_outfile,"\n");
         end
 
-        $fclose(pooled_outfile);
+        $fclose(layer_outfile);
+
+        // Wait until state == FULLYCONNECTED to check flattened output
+        wait(CNN_dut.state == FULLYCONNECTED);
+
+        #20 
+
+        $display($time,"ns: Writing flattened_outfmap results into flattened_output text file...\n");
+
+        // Write out pooled_outfmap back into a text file
+        layer_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/flattened_output.txt","w");
+        if (layer_outfile)  $display("File was opened successfully : %0d\n", layer_outfile);
+        else         $display("File was NOT opened successfully : %0d\n", layer_outfile);
+
+        for (int i = 0; i < FLATTENED_LENGTH; i = i + 1) begin
+            $fwrite(layer_outfile,"%0d ",CNN_dut.flattened_outfmap[i]);
+        end
+        $fwrite(layer_outfile,"\n");
+
+        $fclose(layer_outfile);
 
         // Wait until state == IDLE to check cnn_output
         wait(CNN_dut.state == IDLE);
@@ -210,7 +229,7 @@ module CNN_tb #(
         $display($time,"ns: Writing cnn_output into cnn_output text file...\n");
 
         // Write out cnn_output back into a text file
-        cnn_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/cnn_output_102.txt","w");
+        cnn_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/cnn_output_69.txt","w");
         if (cnn_outfile)  $display("File was opened successfully : %0d\n", cnn_outfile);
         else         $display("File was NOT opened successfully : %0d\n", cnn_outfile);
 
@@ -220,51 +239,8 @@ module CNN_tb #(
 
         $fclose(cnn_outfile);
 
-        // // TESTING 5 IMAGES 
-
-        // // Reset the CNN
-        // #10
-        // rst_cnn = 0;
-        // #10
-        // rst_cnn = 1;
-
-        // $display($time,"ns: Inputting image #1...\n");
-
-        // // Reading in 2D image from a text file
-        // infile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/binary_image_102.txt","r");
-        // if (infile)  $display("File was opened successfully : %0d\n", infile);
-        // else         $display("File was NOT opened successfully : %0d\n", infile);
-
-        // for (int i = 0; i < IMAGE_HEIGHT; i = i + 1) begin
-        //     for (int j = 0; j < IMAGE_WIDTH; j = j + 1) begin
-        //         void'($fscanf(infile,"%d",image[i][j]));
-        //     end
-        // end
-        // $fclose(infile);
-
-        // #10
-        // $display($time,"ns: Starting convolution...\n");
-        // // Start convolution
-        // enable = 0; 
-        // #20
-        // enable = 1;
-        // // Wait until state == IDLE to check cnn_output, which should be the output of FULLYCONNECTED too
-        // wait(CNN_dut.state == IDLE);
-        // #20
-
-        // $display($time,"ns: Writing cnn_output into text file for image #1...\n");
-
-        // // Write out cnn_output back into a text file
-        // cnn_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/cnn_output_102.txt","w");
-        // if (cnn_outfile)  $display("File was opened successfully : %0d\n", cnn_outfile);
-        // else         $display("File was NOT opened successfully : %0d\n", cnn_outfile);
-
-        // $fwrite(cnn_outfile,"cnn_output: \n");
-        // $fwrite(cnn_outfile,"%0d\n",cnn_output);
-        // $fwrite(cnn_outfile,"\n");
-
-        // $fclose(cnn_outfile);
-
+        // // TESTING 4 OTHER IMAGES 
+        
         // // Reset the CNN
         // #10
         // rst_cnn = 0;
@@ -273,7 +249,7 @@ module CNN_tb #(
 
         // $display($time,"ns: Inputting image #2...\n");
 
-        //  // Reading in 2D image from a text file
+        // // Reading in 2D image from a text file
         // infile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/binary_image_456.txt","r");
         // if (infile)  $display("File was opened successfully : %0d\n", infile);
         // else         $display("File was NOT opened successfully : %0d\n", infile);

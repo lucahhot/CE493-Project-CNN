@@ -11,8 +11,7 @@ module CNN #(
     parameter POOLED_HEIGHT = 12, // = CONVOLUTION_HEIGHT >> 1
     parameter FLATTENED_LENGTH = 432, // = POOLED_WIDTH * POOLED_HEIGHT * NUM_FEATURES;
     parameter DATA_WIDTH = 8, // Everything inside the CNN should be 8 bits wide
-    parameter PSUM_DATA_WIDTH = 32, // Need extra bits to add all the psums
-    parameter BIAS_DATA_WIDTH = 32, // Biases are int32 numbers
+    parameter PSUM_DATA_WIDTH = 12, // Need extra bits to add all the psums
     parameter FULLYCONNECTED_DATA_WIDTH = 32 // Bit width for the fully connected layer in case but final output will be 8 bits
 
 )(
@@ -34,7 +33,7 @@ module CNN #(
     input logic rst_cnn, // Active-low reset signal to reset the convolution process
     input logic convolution_enable, // Active-low enable signal to start convolution (DOES NOT RESET CNN)
 
-    input logic signed [BIAS_DATA_WIDTH-1:0] bias_weights_input [NUM_FEATURES+1], // NUM_FEATURES + 1 biases to include 1 per feature and 1 for the fully connected weights
+    input logic signed [DATA_WIDTH-1:0] bias_weights_input [NUM_FEATURES+1], // NUM_FEATURES + 1 biases to include 1 per feature and 1 for the fully connected weights
     input logic bias_WrEn,
     input logic rst_bias_weights,
 
@@ -62,10 +61,10 @@ FeatureMem #(KERNEL_SIZE, NUM_FEATURES, DATA_WIDTH) feature_weights_mem(.address
 .clk(clk),.rst(rst_feature_weights),.feature_weights_input(feature_weights_input),.feature_weights_output(feature_weights));
 
 // Register to hold current biases inside
-logic signed [BIAS_DATA_WIDTH-1:0] bias_weights [NUM_FEATURES+1];
+logic signed [DATA_WIDTH-1:0] bias_weights [NUM_FEATURES+1];
 
 // Instantiation of bias weight memory block which will hold all the biases to be used in the convolution and fully connected layer
-BiasMem #(NUM_FEATURES, BIAS_DATA_WIDTH) bias_weights_mem(.bias_WrEn(bias_WrEn),.clk(clk),.rst(rst_bias_weights),.bias_weights_input(bias_weights_input),
+BiasMem #(NUM_FEATURES, DATA_WIDTH) bias_weights_mem(.bias_WrEn(bias_WrEn),.clk(clk),.rst(rst_bias_weights),.bias_weights_input(bias_weights_input),
 .bias_weights_output(bias_weights));
 
 ///////////////////////////
@@ -161,6 +160,7 @@ always_ff @(negedge clk, negedge rst_cnn) begin
         pooled_outfmap <= '{default: 'X};
         flattened_outfmap <= '{default: 'X};
         fullyconected_output <= '{default: 'X};
+        psum_values <= '{default: 'X};
         image_row <= 0;
         image_col <= 0;
         state <= IDLE;
@@ -176,12 +176,12 @@ always_ff @(negedge clk, negedge rst_cnn) begin
             // Combinational process to update the last psum value in the accumulation back into convolution_outfmap for all features
             for (int feature_index = 0; feature_index < NUM_FEATURES; feature_index = feature_index + STRIDE) begin
                 // If the resulting psum value is negative, then enter a 0 into the convolution_outfmap (ReLU or rectified linear unit)
-                if (psum_values[feature_index][KERNEL_SIZE*KERNEL_SIZE - 1] < 0)
+                if ((psum_values[feature_index][KERNEL_SIZE*KERNEL_SIZE - 1]) < 0)
                     convolution_outfmap[feature_index][image_row][image_col] <= 0;
                 else
                     // [QUESTION]: In non-quantized convolution, we divide by KERNEL_SIZE * KERNEL_SIZE, not sure if we do it here
                     // SRA by 4 bits is dividing by 16
-                    convolution_outfmap[feature_index][image_row][image_col] <= (psum_values[feature_index][KERNEL_SIZE*KERNEL_SIZE - 1] >>> 4) ;
+                    convolution_outfmap[feature_index][image_row][image_col] <= ((psum_values[feature_index][KERNEL_SIZE*KERNEL_SIZE - 1]) >>> 4) ;
             end
             // Increment image_col by STRIDE till the next tile is out of bounds, then increment image_row by STRIDE and set image_col back to 0
             if ((image_col + STRIDE) == CONVOLUTION_WIDTH) begin

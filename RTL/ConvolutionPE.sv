@@ -2,12 +2,11 @@
 
 module ConvolutionPE #(
     parameter DATA_WIDTH = 8,
-    parameter PSUM_DATA_WIDTH = 12,
-    parameter BIAS_DATA_WIDTH = 32
+    parameter PSUM_DATA_WIDTH = 12
 )(
     input logic signed [PSUM_DATA_WIDTH-1:0] inpsum,
     input logic signed [DATA_WIDTH-1:0] weight,
-    input logic signed [BIAS_DATA_WIDTH-1:0] bias,
+    input logic signed [DATA_WIDTH-1:0] bias,
     input logic infmap_value,
     output logic signed [PSUM_DATA_WIDTH-1:0] outpsum
 );
@@ -22,7 +21,7 @@ always_comb begin
         multiply_operand = 1;
     else
         multiply_operand = -1;
-    outpsum = inpsum + (weight * multiply_operand + bias);
+    outpsum = inpsum + (weight * multiply_operand) + bias;
 end
 
 endmodule
