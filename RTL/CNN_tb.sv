@@ -114,7 +114,7 @@ module CNN_tb #(
 
         fullyconnected_WrEn = 0;
         // Reading in fullyconnected weights from a text file
-        fullyconnected_infile = $fopen("fullyconnected_input.txt","r");
+        fullyconnected_infile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/fullyconnected_input.txt","r");
         if (fullyconnected_infile)  $display("File was opened successfully : %0d\n", fullyconnected_infile);
         else         $display("File was NOT opened successfully : %0d\n", fullyconnected_infile);
 
@@ -135,7 +135,7 @@ module CNN_tb #(
         $display($time,"ns: Reading 2D input image from input text file...\n");
 
         // Reading in 2D image from a text file
-        infile = $fopen("image_input.txt","r");
+        infile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/image_input.txt","r");
         if (infile)  $display("File was opened successfully : %0d\n", infile);
         else         $display("File was NOT opened successfully : %0d\n", infile);
 
@@ -163,7 +163,7 @@ module CNN_tb #(
         $display($time,"ns: Writing convolution_outfmap results into convolution_output text file...\n");
 
         // Write out convolution_outfmap back into a text file to easily analyze
-        convolution_outfile = $fopen("convolution_output.txt","w");
+        convolution_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/convolution_output.txt","w");
         if (convolution_outfile)  $display("File was opened successfully : %0d\n", convolution_outfile);
         else         $display("File was NOT opened successfully : %0d\n", convolution_outfile);
 
@@ -187,8 +187,8 @@ module CNN_tb #(
 
         $display($time,"ns: Writing pooled_outfmap results into pooled_output text file...\n");
 
-        // write out pooled_outfmap back into a text file
-        pooled_outfile = $fopen("pooled_output.txt","w");
+        // Write out pooled_outfmap back into a text file
+        pooled_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/pooled_output.txt","w");
         if (pooled_outfile)  $display("File was opened successfully : %0d\n", pooled_outfile);
         else         $display("File was NOT opened successfully : %0d\n", pooled_outfile);
 
@@ -212,8 +212,8 @@ module CNN_tb #(
 
         $display($time,"ns: Writing flattened_outfmap results into flattened_output text file...\n");
 
-        // write out pooled_outfmap back into a text file
-        flattened_outfile = $fopen("flattened_output.txt","w");
+        // Write out pooled_outfmap back into a text file
+        flattened_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/flattened_output.txt","w");
         if (flattened_outfile)  $display("File was opened successfully : %0d\n", flattened_outfile);
         else         $display("File was NOT opened successfully : %0d\n", flattened_outfile);
 
@@ -232,8 +232,8 @@ module CNN_tb #(
         
         $display($time,"ns: Writing cnn_output into cnn_output text file...\n");
 
-        // write out cnn_output back into a text file
-        cnn_outfile = $fopen("cnn_output.txt","w");
+        // Write out cnn_output back into a text file
+        cnn_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/cnn_output.txt","w");
         if (cnn_outfile)  $display("File was opened successfully : %0d\n", cnn_outfile);
         else         $display("File was NOT opened successfully : %0d\n", cnn_outfile);
 
@@ -242,6 +242,224 @@ module CNN_tb #(
         $fwrite(cnn_outfile,"\n");
 
         $fclose(cnn_outfile);
+
+        // TESTING 5 IMAGES 
+
+        // Reset the CNN
+        #10
+        rst_cnn = 0;
+        #10
+        rst_cnn = 1;
+
+        $display($time,"ns: Inputting image #1...\n");
+
+        // Reading in 2D image from a text file
+        infile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/binary_image_102.txt","r");
+        if (infile)  $display("File was opened successfully : %0d\n", infile);
+        else         $display("File was NOT opened successfully : %0d\n", infile);
+
+        for (int i = 0; i < IMAGE_HEIGHT; i = i + 1) begin
+            for (int j = 0; j < IMAGE_WIDTH; j = j + 1) begin
+                void'($fscanf(infile,"%d",image[i][j]));
+            end
+        end
+        $fclose(infile);
+
+        #10
+        $display($time,"ns: Starting convolution...\n");
+        // Start convolution
+        enable = 0; 
+        #20
+        enable = 1;
+        // Wait until state == IDLE to check cnn_output, which should be the output of FULLYCONNECTED too
+        wait(CNN_dut.state == IDLE);
+        #20
+
+        $display($time,"ns: Writing cnn_output into text file for image #1...\n");
+
+        // Write out cnn_output back into a text file
+        cnn_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/cnn_output_102.txt","w");
+        if (cnn_outfile)  $display("File was opened successfully : %0d\n", cnn_outfile);
+        else         $display("File was NOT opened successfully : %0d\n", cnn_outfile);
+
+        $fwrite(cnn_outfile,"cnn_output: \n");
+        $fwrite(cnn_outfile,"%0d\n",cnn_output);
+        $fwrite(cnn_outfile,"\n");
+
+        $fclose(cnn_outfile);
+
+        // Reset the CNN
+        #10
+        rst_cnn = 0;
+        #10
+        rst_cnn = 1;
+
+        $display($time,"ns: Inputting image #2...\n");
+
+         // Reading in 2D image from a text file
+        infile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/binary_image_456.txt","r");
+        if (infile)  $display("File was opened successfully : %0d\n", infile);
+        else         $display("File was NOT opened successfully : %0d\n", infile);
+
+        for (int i = 0; i < IMAGE_HEIGHT; i = i + 1) begin
+            for (int j = 0; j < IMAGE_WIDTH; j = j + 1) begin
+                void'($fscanf(infile,"%d",image[i][j]));
+            end
+        end
+        $fclose(infile);
+
+        #10
+        $display($time,"ns: Starting convolution...\n");
+        // Start convolution
+        enable = 0; 
+        #20
+        enable = 1;
+        // Wait until state == IDLE to check cnn_output, which should be the output of FULLYCONNECTED too
+        wait(CNN_dut.state == IDLE);
+        #20
+
+        $display($time,"ns: Writing cnn_output into text file for image #2...\n");
+
+        // Write out cnn_output back into a text file
+        cnn_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/cnn_output_456.txt","w");
+        if (cnn_outfile)  $display("File was opened successfully : %0d\n", cnn_outfile);
+        else         $display("File was NOT opened successfully : %0d\n", cnn_outfile);
+
+        $fwrite(cnn_outfile,"cnn_output: \n");
+        $fwrite(cnn_outfile,"%0d\n",cnn_output);
+        $fwrite(cnn_outfile,"\n");
+
+        $fclose(cnn_outfile);
+
+        // Reset the CNN
+        #10
+        rst_cnn = 0;
+        #10
+        rst_cnn = 1;
+
+        $display($time,"ns: Inputting image #3...\n");
+
+         // Reading in 2D image from a text file
+        infile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/binary_image_914.txt","r");
+        if (infile)  $display("File was opened successfully : %0d\n", infile);
+        else         $display("File was NOT opened successfully : %0d\n", infile);
+
+        for (int i = 0; i < IMAGE_HEIGHT; i = i + 1) begin
+            for (int j = 0; j < IMAGE_WIDTH; j = j + 1) begin
+                void'($fscanf(infile,"%d",image[i][j]));
+            end
+        end
+        $fclose(infile);
+
+        #10
+        $display($time,"ns: Starting convolution...\n");
+        // Start convolution
+        enable = 0; 
+        #20
+        enable = 1;
+        // Wait until state == IDLE to check cnn_output, which should be the output of FULLYCONNECTED too
+        wait(CNN_dut.state == IDLE);
+        #20
+
+        $display($time,"ns: Writing cnn_output into text file for image #3...\n");
+
+        // Write out cnn_output back into a text file
+        cnn_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/cnn_output_914.txt","w");
+        if (cnn_outfile)  $display("File was opened successfully : %0d\n", cnn_outfile);
+        else         $display("File was NOT opened successfully : %0d\n", cnn_outfile);
+
+        $fwrite(cnn_outfile,"cnn_output: \n");
+        $fwrite(cnn_outfile,"%0d\n",cnn_output);
+        $fwrite(cnn_outfile,"\n");
+
+        $fclose(cnn_outfile);
+
+        // Reset the CNN
+        #10
+        rst_cnn = 0;
+        #10
+        rst_cnn = 1;
+
+        $display($time,"ns: Inputting image #4...\n");
+
+         // Reading in 2D image from a text file
+        infile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/binary_image_1003.txt","r");
+        if (infile)  $display("File was opened successfully : %0d\n", infile);
+        else         $display("File was NOT opened successfully : %0d\n", infile);
+
+        for (int i = 0; i < IMAGE_HEIGHT; i = i + 1) begin
+            for (int j = 0; j < IMAGE_WIDTH; j = j + 1) begin
+                void'($fscanf(infile,"%d",image[i][j]));
+            end
+        end
+        $fclose(infile);
+
+        #10
+        $display($time,"ns: Starting convolution...\n");
+        // Start convolution
+        enable = 0; 
+        #20
+        enable = 1;
+        // Wait until state == IDLE to check cnn_output, which should be the output of FULLYCONNECTED too
+        wait(CNN_dut.state == IDLE);
+        #20
+
+        $display($time,"ns: Writing cnn_output into text file for image #4...\n");
+
+        // Write out cnn_output back into a text file
+        cnn_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/cnn_output_1003.txt","w");
+        if (cnn_outfile)  $display("File was opened successfully : %0d\n", cnn_outfile);
+        else         $display("File was NOT opened successfully : %0d\n", cnn_outfile);
+
+        $fwrite(cnn_outfile,"cnn_output: \n");
+        $fwrite(cnn_outfile,"%0d\n",cnn_output);
+        $fwrite(cnn_outfile,"\n");
+
+        $fclose(cnn_outfile);
+
+        // Reset the CNN
+        #10
+        rst_cnn = 0;
+        #10
+        rst_cnn = 1;
+
+        $display($time,"ns: Inputting image #5...\n");
+
+         // Reading in 2D image from a text file
+        infile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/binary_image_1126.txt","r");
+        if (infile)  $display("File was opened successfully : %0d\n", infile);
+        else         $display("File was NOT opened successfully : %0d\n", infile);
+
+        for (int i = 0; i < IMAGE_HEIGHT; i = i + 1) begin
+            for (int j = 0; j < IMAGE_WIDTH; j = j + 1) begin
+                void'($fscanf(infile,"%d",image[i][j]));
+            end
+        end
+        $fclose(infile);
+
+        #10
+        $display($time,"ns: Starting convolution...\n");
+        // Start convolution
+        enable = 0; 
+        #20
+        enable = 1;
+        // Wait until state == IDLE to check cnn_output, which should be the output of FULLYCONNECTED too
+        wait(CNN_dut.state == IDLE);
+        #20
+
+        $display($time,"ns: Writing cnn_output into text file for image #5...\n");
+
+        // Write out cnn_output back into a text file
+        cnn_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/cnn_output_1126.txt","w");
+        if (cnn_outfile)  $display("File was opened successfully : %0d\n", cnn_outfile);
+        else         $display("File was NOT opened successfully : %0d\n", cnn_outfile);
+
+        $fwrite(cnn_outfile,"cnn_output: \n");
+        $fwrite(cnn_outfile,"%0d\n",cnn_output);
+        $fwrite(cnn_outfile,"\n");
+
+        $fclose(cnn_outfile);
+
 
         $display($time,"ns: Finished testing...\n");
         
