@@ -11,7 +11,8 @@ module CNN #(
     parameter POOLED_HEIGHT = 12, // = CONVOLUTION_HEIGHT >> 1
     parameter FLATTENED_LENGTH = 432, // = POOLED_WIDTH * POOLED_HEIGHT * NUM_FEATURES;
     parameter DATA_WIDTH = 8, // Everything inside the CNN should be 8 bits wide
-    parameter PSUM_DATA_WIDTH = 12, // Need extra bits to add all the psums
+    parameter PSUM_DATA_WIDTH = 32, // Need extra bits to add all the psums
+    parameter BIAS_DATA_WIDTH = 32, // Biases are int32 numbers
     parameter FULLYCONNECTED_DATA_WIDTH = 32 // Bit width for the fully connected layer in case but final output will be 8 bits
 
 )(
@@ -33,7 +34,7 @@ module CNN #(
     input logic rst_cnn, // Active-low reset signal to reset the convolution process
     input logic convolution_enable, // Active-low enable signal to start convolution (DOES NOT RESET CNN)
 
-    input logic signed [DATA_WIDTH-1:0] bias_weights_input [NUM_FEATURES+1], // NUM_FEATURES + 1 biases to include 1 per feature and 1 for the fully connected weights
+    input logic signed [BIAS_DATA_WIDTH-1:0] bias_weights_input [NUM_FEATURES+1], // NUM_FEATURES + 1 biases to include 1 per feature and 1 for the fully connected weights
     input logic bias_WrEn,
     input logic rst_bias_weights,
 
@@ -61,10 +62,10 @@ FeatureMem #(KERNEL_SIZE, NUM_FEATURES, DATA_WIDTH) feature_weights_mem(.address
 .clk(clk),.rst(rst_feature_weights),.feature_weights_input(feature_weights_input),.feature_weights_output(feature_weights));
 
 // Register to hold current biases inside
-logic signed [DATA_WIDTH-1:0] bias_weights [NUM_FEATURES+1];
+logic signed [BIAS_DATA_WIDTH-1:0] bias_weights [NUM_FEATURES+1];
 
 // Instantiation of bias weight memory block which will hold all the biases to be used in the convolution and fully connected layer
-BiasMem #(NUM_FEATURES, DATA_WIDTH) bias_weights_mem(.bias_WrEn(bias_WrEn),.clk(clk),.rst(rst_bias_weights),.bias_weights_input(bias_weights_input),
+BiasMem #(NUM_FEATURES, BIAS_DATA_WIDTH) bias_weights_mem(.bias_WrEn(bias_WrEn),.clk(clk),.rst(rst_bias_weights),.bias_weights_input(bias_weights_input),
 .bias_weights_output(bias_weights));
 
 ///////////////////////////
@@ -73,7 +74,7 @@ BiasMem #(NUM_FEATURES, DATA_WIDTH) bias_weights_mem(.bias_WrEn(bias_WrEn),.clk(
 
 // 3D array output of the first convolution layer (will end up with NUM_FEATURES x 2D arrays)
 // (is unsigned since all the negative values should have been converted to 0)
-logic [DATA_WIDTH-1:0] convolution_outfmap [NUM_FEATURES][CONVOLUTION_HEIGHT][CONVOLUTION_WIDTH];
+logic signed [DATA_WIDTH-1:0] convolution_outfmap [NUM_FEATURES][CONVOLUTION_HEIGHT][CONVOLUTION_WIDTH];
 
 // 2D array to hold values of psums from each PE to feed them into the next PEs
 logic signed [PSUM_DATA_WIDTH-1:0] psum_values [NUM_FEATURES][KERNEL_SIZE*KERNEL_SIZE];
@@ -90,10 +91,10 @@ int image_row, image_col;
 ///////////////////////
 
 // 3D pooled_outfmap after max pooling (dimensions are changed with pooling)
-logic [DATA_WIDTH-1:0] pooled_outfmap [NUM_FEATURES][(POOLED_HEIGHT)][(POOLED_WIDTH)];
+logic signed [DATA_WIDTH-1:0] pooled_outfmap [NUM_FEATURES][(POOLED_HEIGHT)][(POOLED_WIDTH)];
 
 // Creating the combinational version of the above register to be updated in the combinational always_comb statement
-logic [DATA_WIDTH-1:0] pooled_outfmap_c [NUM_FEATURES][(POOLED_HEIGHT)][(POOLED_WIDTH)];
+logic signed [DATA_WIDTH-1:0] pooled_outfmap_c [NUM_FEATURES][(POOLED_HEIGHT)][(POOLED_WIDTH)];
 
 // Start signal to start pooling during stage POOLING
 logic pool_start;
@@ -107,10 +108,10 @@ pooling_block(.pool_start(pool_start),.convolution_outfmap(convolution_outfmap),
 //////////////////////////
 
 // 1D flattened_outfmap after flattening layer 
-logic [DATA_WIDTH-1:0] flattened_outfmap [FLATTENED_LENGTH];
+logic signed [DATA_WIDTH-1:0] flattened_outfmap [FLATTENED_LENGTH];
 
 // Combinational version of the above to be updated in the combinational always_comb statement
-logic [DATA_WIDTH-1:0] flattened_outfmap_c [FLATTENED_LENGTH];
+logic signed  [DATA_WIDTH-1:0] flattened_outfmap_c [FLATTENED_LENGTH];
 
 // Start signal to start flattening during stage FLATTENING
 logic flatten_start;
@@ -132,10 +133,10 @@ FullyConnectedMem #(FLATTENED_LENGTH,DATA_WIDTH) fullyconnected_weights_mem(.ful
 .rst(rst_fullyconnected_weights),.address_w(fullyconnected_writeAddr),.fullyconnected_weights_input(fullyconnected_weights_input),.fullyconnected_weights_output(fullyconnected_weights));
 
 // Scalar value after fullyconnected layer that's clocked and is the CNN output
-logic [DATA_WIDTH-1:0] fullyconected_output;
+logic signed [DATA_WIDTH-1:0] fullyconected_output;
 
 // Combinational value of fullyconnected output
-logic [DATA_WIDTH-1:0] fullyconnected_output_c;
+logic signed [DATA_WIDTH-1:0] fullyconnected_output_c;
 
 // Start signal to start fullyconnected layer during stage FULLYCONNECTED
 logic fullyconnect_start;

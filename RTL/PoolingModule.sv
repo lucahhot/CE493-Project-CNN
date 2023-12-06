@@ -11,8 +11,8 @@ module PoolingModule #(
     parameter DATA_WIDTH = 8
 )(
     input logic pool_start, // Start signal to start pooling
-    input logic [DATA_WIDTH-1:0] convolution_outfmap [NUM_FEATURES][CONVOLUTION_HEIGHT][CONVOLUTION_WIDTH],
-    output logic [DATA_WIDTH-1:0] pooled_outfmap_c [NUM_FEATURES][(POOLED_HEIGHT)][(POOLED_WIDTH)]
+    input logic signed [DATA_WIDTH-1:0] convolution_outfmap [NUM_FEATURES][CONVOLUTION_HEIGHT][CONVOLUTION_WIDTH],
+    output logic signed [DATA_WIDTH-1:0] pooled_outfmap_c [NUM_FEATURES][(POOLED_HEIGHT)][(POOLED_WIDTH)]
 );
 
 // Temp register to hold the current max of pooling tile

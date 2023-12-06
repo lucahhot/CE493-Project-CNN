@@ -9,8 +9,8 @@ module FlatteningModule #(
     parameter DATA_WIDTH = 8
 )(
     input logic flatten_start, // Start signal to start flattening
-    input logic [DATA_WIDTH-1:0] pooled_outfmap [NUM_FEATURES][POOLED_HEIGHT][POOLED_WIDTH],
-    output logic [DATA_WIDTH-1:0] flattened_outfmap_c [FLATTENED_LENGTH]
+    input logic signed [DATA_WIDTH-1:0] pooled_outfmap [NUM_FEATURES][POOLED_HEIGHT][POOLED_WIDTH],
+    output logic signed [DATA_WIDTH-1:0] flattened_outfmap_c [FLATTENED_LENGTH]
 );
 
 // Combinational module that flattens the 2D pooled output from the pooling layer and outputs

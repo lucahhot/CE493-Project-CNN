@@ -2,11 +2,12 @@
 
 module ConvolutionPE #(
     parameter DATA_WIDTH = 8,
-    parameter PSUM_DATA_WIDTH = 12
+    parameter PSUM_DATA_WIDTH = 12,
+    parameter BIAS_DATA_WIDTH = 32
 )(
     input logic signed [PSUM_DATA_WIDTH-1:0] inpsum,
     input logic signed [DATA_WIDTH-1:0] weight,
-    input logic signed [DATA_WIDTH-1:0] bias,
+    input logic signed [BIAS_DATA_WIDTH-1:0] bias,
     input logic infmap_value,
     output logic signed [PSUM_DATA_WIDTH-1:0] outpsum
 );
