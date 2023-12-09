@@ -160,7 +160,6 @@ always_ff @(negedge clk, negedge rst_cnn) begin
         pooled_outfmap <= '{default: 'X};
         flattened_outfmap <= '{default: 'X};
         fullyconected_output <= '{default: 'X};
-        psum_values <= '{default: 'X};
         image_row <= 0;
         image_col <= 0;
         state <= IDLE;

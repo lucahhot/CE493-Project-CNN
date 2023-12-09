@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
 
-module CNN_tb #(
+module CNN_tb_layout #(
     parameter IMAGE_WIDTH = 28,
     parameter IMAGE_HEIGHT = 28,
     parameter NUM_FEATURES = 3,
@@ -11,7 +11,6 @@ module CNN_tb #(
     parameter POOLED_HEIGHT = 12, // = CONVOLUTION_HEIGHT >> 1
     parameter FLATTENED_LENGTH = 432, // = POOLED_WIDTH * POOLED_HEIGHT * NUM_FEATURES;
     parameter DATA_WIDTH = 8, // Everything inside the CNN should be 8 bits wide
-    parameter BIAS_DATA_WIDTH = 8,
     parameter PSUM_DATA_WIDTH = 12, // Need extra bits to add all the psums
     parameter FULLYCONNECTED_DATA_WIDTH = 32
 );
@@ -23,7 +22,7 @@ module CNN_tb #(
     logic feature_WrEn;
     logic rst_feature_weights;
 
-    logic signed [BIAS_DATA_WIDTH-1:0] biases [NUM_FEATURES+1];
+    logic signed [DATA_WIDTH-1:0] biases [NUM_FEATURES+1];
     logic bias_WrEn;
     logic rst_bias_weights;
 
@@ -40,16 +39,39 @@ module CNN_tb #(
 
     parameter IDLE = 0, CONVOLUTION = 1, POOLING = 2, FLATTENING = 3, FULLYCONNECTED = 4, OUTPUT = 5;
 
+    // Packed array of image_input to feed into synthesized netlist (for some reason it only accepts a packed array
+    // since it's written in verilog which doesn't support unpacked array IO ports)
+    logic signed [(IMAGE_HEIGHT*IMAGE_WIDTH)-1:0] packed_image;
+
+    // Packed array of feature to feed into synthesized netlist 
+    logic signed [(DATA_WIDTH*KERNEL_SIZE*KERNEL_SIZE)-1:0] packed_feature;
+
+    // Packed array of fully connected weights to feed into synthesized netlist
+    logic signed [(DATA_WIDTH*FLATTENED_LENGTH)-1:0] packed_fullyconnected_weights;
+
+    // Packed array of bias weights to feed into synthesized netlist
+    logic signed [(DATA_WIDTH*(NUM_FEATURES+1))-1:0] packed_bias_weights;
+
+    // Calling functions to pack the unpacked arrays
+    pack2d_module #(IMAGE_HEIGHT,IMAGE_WIDTH,1) u1 ();
+
+    pack1d_module #(KERNEL_SIZE*KERNEL_SIZE,DATA_WIDTH) u2 ();
+
+    pack1d_module #(16,DATA_WIDTH) u3 ();
+
+    pack1d_module #((NUM_FEATURES+1),DATA_WIDTH) u4 ();
+
     // Files reading/writing variables
-    int infile,layer_outfile,cnn_outfile;
+    int infile,convolution_outfile,pooled_outfile,flattened_outfile,fullyconnected_infile,cnn_outfile;
 
     // Instantiating an instance of CNN
-    CNN CNN_dut(.image_input(image),.feature_weights_input(feature),.feature_writeAddr(feature_addr),.feature_WrEn(feature_WrEn),.rst_feature_weights(rst_feature_weights),.bias_weights_input(biases),.bias_WrEn(bias_WrEn),.rst_bias_weights(rst_bias_weights),
-                .fullyconnected_weights_input(fullyconnected_weights_input),.fullyconnected_writeAddr(fullyconnected_writeAddr),.fullyconnected_WrEn(fullyconnected_WrEn),.rst_fullyconnected_weights(rst_fullyconnected_weights),.clk(clk),.rst_cnn(rst_cnn),.convolution_enable(enable),.cnn_output(cnn_output));
+    CNN CNN_dut(.image_input(packed_image),.feature_weights_input(packed_feature),.feature_writeAddr(feature_addr),.feature_WrEn(feature_WrEn),.rst_feature_weights(rst_feature_weights),.bias_weights_input(packed_bias_weights),.bias_WrEn(bias_WrEn),.rst_bias_weights(rst_bias_weights),
+                .fullyconnected_weights_input(packed_fullyconnected_weights),.fullyconnected_writeAddr(fullyconnected_writeAddr),.fullyconnected_WrEn(fullyconnected_WrEn),.rst_fullyconnected_weights(rst_fullyconnected_weights),.clk(clk),.rst_cnn(rst_cnn),.convolution_enable(enable),.cnn_output(cnn_output));
+
 
     // Clock with a period of 20ns
     always
-        #10 clk = ~clk;
+        #10.5 clk = ~clk;
 
     initial begin
 
@@ -64,12 +86,12 @@ module CNN_tb #(
         rst_feature_weights = 1;
         rst_bias_weights = 1;
         rst_fullyconnected_weights = 1;
-        #20
+        #21
         rst_cnn = 0;
         rst_feature_weights = 0;
         rst_bias_weights = 0;
         rst_fullyconnected_weights = 0;
-        #20
+        #21
         rst_cnn = 1;
         rst_feature_weights = 1;
         rst_bias_weights = 1;
@@ -86,9 +108,9 @@ module CNN_tb #(
         feature = '{-53,43,-53,-83,-10,11,-26,72,-2,75,55,-36,-24,62,39,26};
         packed_feature = u2.pack1d(feature);
         // Wait 1 clock pulse for feature map to loaded into memory
-        #20
+        #21
         feature_WrEn = 1;
-        #20
+        #21
         feature_WrEn = 0;
         // Write second feature map into feature memory
         feature_addr = 1;
@@ -96,9 +118,9 @@ module CNN_tb #(
         // Feature #2 for quantized model (12/04/23)
         feature = '{-35,-17,49,-37,-93,49,88,-40,-39,15,-3,22,74,76,-59,21};
         packed_feature = u2.pack1d(feature);
-        #20
+        #21
         feature_WrEn = 1;
-        #20
+        #21
         feature_WrEn = 0;
         // Write third feature map into feature memory
         feature_addr = 2;
@@ -106,15 +128,15 @@ module CNN_tb #(
         // Feature #3 for quantized model (12/04/23)
         feature = '{31,2,-47,69,64,16,-4,-83,42,40,66,-50,3,-59,69,18};
         packed_feature = u2.pack1d(feature);
-        #20
+        #21
         feature_WrEn = 1;
-        #20
+        #21
         // Write biases into bias memory
         bias_WrEn = 0;
         // Biases for quantized model (12/04/23)
         biases = '{10,0,0,-8};
         packed_bias_weights = u4.pack1d(biases);
-        #20
+        #21
         bias_WrEn = 1;
 
         $display($time,"ns: Finished loading feature maps, loading fully connected weights into fully connected memory...\n");
@@ -156,93 +178,24 @@ module CNN_tb #(
 
         packed_image = u1.pack2d(image);
 
-        #20
+        #21
 
         $display($time,"ns: Starting convolution...\n");
 
         // Start convolution
         enable = 0; 
-        #20
+        #21
         enable = 1;
 
-        // Wait until state == POOLING to check convolution output
-        wait(CNN_dut.state == POOLING);
-
-        #20
-
-        $display($time,"ns: Writing convolution_outfmap results into convolution_output text file...\n");
-
-        // Write out convolution_outfmap back into a text file to easily analyze
-        layer_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/convolution_output.txt","w");
-        if (layer_outfile)  $display("File was opened successfully : %0d\n", layer_outfile);
-        else         $display("File was NOT opened successfully : %0d\n", layer_outfile);
-
-        for (int feature = 0; feature < NUM_FEATURES; feature = feature + 1) begin
-            $fwrite(layer_outfile,"convolution_outfmap for feature %0d: \n",(feature+1));
-            for (int i = 0; i < CONVOLUTION_HEIGHT; i = i + 1) begin
-                for (int j = 0; j < CONVOLUTION_WIDTH; j = j + 1) begin
-                    $fwrite(layer_outfile,"%0d ",CNN_dut.convolution_outfmap[feature][i][j]);
-                end
-                $fwrite(layer_outfile,"\n");
-            end
-            $fwrite(layer_outfile,"\n");
-        end
-
-        $fclose(layer_outfile);
-
-        // Wait until state == FLATTENING to check pooling output
-        wait(CNN_dut.state == FLATTENING);
-
-        #20 
-
-        $display($time,"ns: Writing pooled_outfmap results into pooled_output text file...\n");
-
-        // Write out pooled_outfmap back into a text file
-        layer_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/pooled_output.txt","w");
-        if (layer_outfile)  $display("File was opened successfully : %0d\n", layer_outfile);
-        else         $display("File was NOT opened successfully : %0d\n", layer_outfile);
-
-        for (int feature = 0; feature < NUM_FEATURES; feature = feature + 1) begin
-            $fwrite(layer_outfile,"pooled_outfmap for feature %0d: \n",(feature+1));
-            for (int i = 0; i < POOLED_HEIGHT; i = i + 1) begin
-                for (int j = 0; j < POOLED_WIDTH; j = j + 1) begin
-                    $fwrite(layer_outfile,"%0d ",CNN_dut.pooled_outfmap[feature][i][j]);
-                end
-                $fwrite(layer_outfile,"\n");
-            end
-            $fwrite(layer_outfile,"\n");
-        end
-
-        $fclose(layer_outfile);
-
-        // Wait until state == FULLYCONNECTED to check flattened output
-        wait(CNN_dut.state == FULLYCONNECTED);
-
-        #20 
-
-        $display($time,"ns: Writing flattened_outfmap results into flattened_output text file...\n");
-
-        // Write out pooled_outfmap back into a text file
-        layer_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/flattened_output.txt","w");
-        if (layer_outfile)  $display("File was opened successfully : %0d\n", layer_outfile);
-        else         $display("File was NOT opened successfully : %0d\n", layer_outfile);
-
-        for (int i = 0; i < FLATTENED_LENGTH; i = i + 1) begin
-            $fwrite(layer_outfile,"%0d ",CNN_dut.flattened_outfmap[i]);
-        end
-        $fwrite(layer_outfile,"\n");
-
-        $fclose(layer_outfile);
-
-        // Wait until state == IDLE to check cnn_output
+        // Wait until state == IDLE to check cnn_output, which should be the output of FULLYCONNECTED too
         wait(CNN_dut.state == IDLE);
 
-        #20
-        
+        #21
+
         $display($time,"ns: Writing cnn_output into cnn_output text file...\n");
 
-        // Write out cnn_output back into a text file
-        cnn_outfile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/cnn_output_102.txt","w");
+        // write out cnn_output back into a text file
+        cnn_outfile = $fopen("cnn_output_layout_102.txt","w");
         if (cnn_outfile)  $display("File was opened successfully : %0d\n", cnn_outfile);
         else         $display("File was NOT opened successfully : %0d\n", cnn_outfile);
 
@@ -259,3 +212,50 @@ module CNN_tb #(
 
 
 endmodule
+
+
+// Module/function to pack a 2D unpacked array into a 1D packed array (MUST OVERWRITE PARAMETERS)
+module pack2d_module #(parameter HEIGHT = 10, parameter WIDTH = 10, parameter BIT_WIDTH = 2)();
+
+    function bit[(BIT_WIDTH*WIDTH*HEIGHT)-1:0] pack2d;
+        input [BIT_WIDTH-1:0] unpacked [HEIGHT][WIDTH];
+
+        bit [(BIT_WIDTH*WIDTH*HEIGHT)-1:0] out;
+        int index;
+        index = (BIT_WIDTH*WIDTH*HEIGHT)-1;
+        for (int row = 0; row < HEIGHT; row = row + 1) begin
+            for (int col = 0; col < WIDTH; col = col + 1) begin
+                for (int i = index; i > (index - BIT_WIDTH); i = i - 1) begin
+                    out[i] = unpacked[row][col][i-(index-BIT_WIDTH)-1];
+                end
+                index = index - BIT_WIDTH;
+            end
+        end
+        return out;
+    endfunction
+
+endmodule
+
+// Module/function to pack a 1D unpacked array into a 1D packed array (MUST OVERWRITE PARAMETERS)
+module pack1d_module #(parameter LENGTH = 10, parameter BIT_WIDTH = 2)();
+
+    function bit[(BIT_WIDTH*LENGTH)-1:0] pack1d;
+        input signed [BIT_WIDTH-1:0] unpacked [LENGTH];
+
+        bit [(BIT_WIDTH*LENGTH)-1:0] out;
+        int index;
+        index = (BIT_WIDTH*LENGTH)-1;
+        for (int row = 0; row < LENGTH; row = row + 1) begin
+            for (int i = index; i > (index - BIT_WIDTH); i = i - 1) begin
+                out[i] = unpacked[row][i-(index-BIT_WIDTH)-1];
+            end
+            index = index - BIT_WIDTH;
+        end
+        return out;
+    endfunction
+
+endmodule
+
+
+
+

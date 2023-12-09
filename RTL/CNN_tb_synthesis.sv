@@ -86,12 +86,12 @@ module CNN_tb_synthesis #(
         rst_feature_weights = 1;
         rst_bias_weights = 1;
         rst_fullyconnected_weights = 1;
-        #10
+        #20
         rst_cnn = 0;
         rst_feature_weights = 0;
         rst_bias_weights = 0;
         rst_fullyconnected_weights = 0;
-        #10
+        #20
         rst_cnn = 1;
         rst_feature_weights = 1;
         rst_bias_weights = 1;
@@ -108,38 +108,39 @@ module CNN_tb_synthesis #(
         feature = '{-53,43,-53,-83,-10,11,-26,72,-2,75,55,-36,-24,62,39,26};
         packed_feature = u2.pack1d(feature);
         // Wait 1 clock pulse for feature map to loaded into memory
-        @(negedge clk);
-        @(negedge clk);
+        #20
+        feature_WrEn = 1;
+        #20
+        feature_WrEn = 0;
         // Write second feature map into feature memory
         feature_addr = 1;
         // feature = '{127,127,127,127,127,127,127,127,127,127,127,127,127,127,127,127};
         // Feature #2 for quantized model (12/04/23)
         feature = '{-35,-17,49,-37,-93,49,88,-40,-39,15,-3,22,74,76,-59,21};
         packed_feature = u2.pack1d(feature);
-        @(negedge clk);
-        @(negedge clk);
+        #20
+        feature_WrEn = 1;
+        #20
+        feature_WrEn = 0;
         // Write third feature map into feature memory
         feature_addr = 2;
         // feature = '{-127,-127,-127,-127,-127,-127,-127,-127,-127,-127,-127,-127,-127,-127,-127,-127};
         // Feature #3 for quantized model (12/04/23)
         feature = '{31,2,-47,69,64,16,-4,-83,42,40,66,-50,3,-59,69,18};
         packed_feature = u2.pack1d(feature);
-        @(negedge clk);
-        @(negedge clk);
+        #20
         feature_WrEn = 1;
-
+        #20
         // Write biases into bias memory
         bias_WrEn = 0;
         // Biases for quantized model (12/04/23)
         biases = '{10,0,0,-8};
         packed_bias_weights = u4.pack1d(biases);
-        @(negedge clk);
-        @(negedge clk);
+        #20
         bias_WrEn = 1;
 
         $display($time,"ns: Finished loading feature maps, loading fully connected weights into fully connected memory...\n");
 
-        fullyconnected_WrEn = 0;
         // Reading in fullyconnected weights from a text file
         fullyconnected_infile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/fullyconnected_input.txt","r");
         if (fullyconnected_infile)  $display("File was opened successfully : %0d\n", fullyconnected_infile);
@@ -151,19 +152,20 @@ module CNN_tb_synthesis #(
             for(int i = 0; i < 16; i = i + 1) begin
                 void'($fscanf(fullyconnected_infile,"%d",fullyconnected_weights_input[i]));
             end
-            packed_fullyconnected_weights = u3.pack1d(fullyconnected_weights_input);
-            @(negedge clk);
-            @(negedge clk);
+            fullyconnected_WrEn = 0;
+            packed_fullyconnected_weights = u3.pack1d(fullyconnected_weights_input); // Because the fully connected weight port only takes 128 8 bit elements, not the enture 
+            #20
+            fullyconnected_WrEn = 1;
             fullyconnected_writeAddr = fullyconnected_writeAddr + 1;
         end
         $fclose(fullyconnected_infile);
 
         fullyconnected_WrEn = 1;
 
-        $display($time,"ns: Reading 2D input image from input text file...\n");
+       $display($time,"ns: Reading 2D input image from input text file...\n");
 
         // Reading in 2D image from a text file
-        infile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/image_input.txt","r");
+        infile = $fopen("/home/luc/Documents/CE493/CE493_Project_CNN/textfiles/binary_image_102.txt","r");
         if (infile)  $display("File was opened successfully : %0d\n", infile);
         else         $display("File was NOT opened successfully : %0d\n", infile);
 
@@ -176,13 +178,13 @@ module CNN_tb_synthesis #(
 
         packed_image = u1.pack2d(image);
 
-        #10
+        #20
 
         $display($time,"ns: Starting convolution...\n");
 
         // Start convolution
         enable = 0; 
-        @(posedge clk);
+        #20
         enable = 1;
 
         // Wait until state == IDLE to check cnn_output, which should be the output of FULLYCONNECTED too
@@ -193,7 +195,7 @@ module CNN_tb_synthesis #(
         $display($time,"ns: Writing cnn_output into cnn_output text file...\n");
 
         // write out cnn_output back into a text file
-        cnn_outfile = $fopen("cnn_output_synthesis.txt","w");
+        cnn_outfile = $fopen("cnn_output_synthesis_102.txt","w");
         if (cnn_outfile)  $display("File was opened successfully : %0d\n", cnn_outfile);
         else         $display("File was NOT opened successfully : %0d\n", cnn_outfile);
 
